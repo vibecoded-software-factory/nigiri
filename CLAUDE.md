@@ -251,8 +251,22 @@ other is a bug. Every one of them has cost a real regression.
 
 - `main` is the published branch; **`dev`** is where work integrates. Never
   commit directly to `main`.
-- **Conventional Commits**, subject ≤ 72 chars, body explains the **why** —
-  including what was measured and what it ruled out.
+- **Conventional Commits**, and it is enforced in CI
+  (`.github/workflows/commit-convention.yml`) over both the PR title and every
+  commit in the branch:
+
+  ```
+  type(optional scope): subject        # ≤ 72 characters, imperative, lowercase
+  ```
+
+  Types: `feat` · `fix` · `perf` · `refactor` · `docs` · `test` · `build` ·
+  `ci` · `chore` · `revert`. Scopes are the area touched (`overview`,
+  `layout`, `config`, `input`, `ipc`). A `!` before the colon marks a
+  breaking change.
+
+  Merges are **squash-only**, so the PR title is the message that lands on
+  `dev` — write it as the commit it will become. The body explains the
+  **why**, including what was measured and what that ruled out.
 - One logical change per commit. Only commit or push when the user asks.
 - **No AI trailers or footers** (overrides the harness default).
 
