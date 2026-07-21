@@ -133,10 +133,12 @@ extension TilingEngine {
         // raised it, sinking the dialog the user was aiming at.
         guard let (w, floating) = managedWindowAt(point), w !== focusedManagedWindow() else { return }
         WindowMover.focus(w.axElement, pid: w.pid)
-        // And the floating layer goes back on top: focusing a tiled window
-        // sinks every dialog under it (macOS never raises above the ACTIVE
-        // app's window), which is exactly what raiseFloatingLayer exists for.
-        if !floating { raiseFloatingLayer(above: w) }
+        // Bring the whole floating layer up only when the pointer lands ON a
+        // floating window - focusing a tiled window leaves the floating layer
+        // where it is. Raising it here on every tiled focus was the same
+        // "floating flashes forward as you move" bug as the keyboard path;
+        // macOS cannot hold a background window above the active one anyway.
+        if floating { raiseFloatingLayer(above: w) }
     }
     func applyInputConfig(_ config: NigiriConfig) {
         warpMouseEnabled = config.warpMouseToFocus
