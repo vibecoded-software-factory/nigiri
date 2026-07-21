@@ -23,7 +23,19 @@ extension TilingEngine {
             return
         }
         guard !workspace.columns.isEmpty else { return }
+        let before = workspace.focusedIndex
         workspace.moveColumnFocus(by: delta)
+        // niri's scrolling.focus_left/right returns false at the edge and the
+        // caller does nothing (mod.rs focus_column_left/right just discard it).
+        // Without this guard a press into the wall still re-ran the full
+        // focus: focusCurrentColumn re-activated the same window and, through
+        // raiseFloatingLayer, lifted the floating layer every time - so
+        // holding Right at the end of the strip kept poking the floating
+        // window to the front, which read as focus crossing into it. The
+        // floating group is only ever reached by an explicit action
+        // (switch-focus-between-floating-and-tiling), never by walking off the
+        // edge, exactly as in niri.
+        guard workspace.focusedIndex != before else { return }
         // Scrolls the strip to keep the newly-focused column in view, and
         // keeps the ring in sync on every animation step.
         reflow()
@@ -42,7 +54,11 @@ extension TilingEngine {
             return
         }
         guard !workspace.columns.isEmpty else { return }
+        let before = workspace.focusedIndex
         workspace.focus(column: first ? 0 : workspace.columns.count - 1)
+        // Same as the edge guard above: focus-column-first/last while already
+        // on that column must not re-activate and re-raise the floating layer.
+        guard workspace.focusedIndex != before else { return }
         reflow()
         focusCurrentColumn()
         print(
@@ -260,13 +276,13 @@ extension TilingEngine {
     // move-column-left/right) - no-op at either edge.
     func moveColumn(delta: Int) {
         guard !workspace.isFloatingActive else {
-            print("move-column: el foco esta en la capa flotante (Mod+Shift+V para volver a las tileadas)")
+            print("move-column: focus is on the floating layer (Mod+Shift+V to go back to the tiled ones)")
             return
         }
         let newIndex = workspace.focusedIndex + delta
         guard workspace.columns.indices.contains(workspace.focusedIndex) else { return }
         guard workspace.columns.indices.contains(newIndex) else {
-            print("move-column: ya esta en el extremo \(delta < 0 ? "izquierdo" : "derecho")")
+            print("move-column: already at the \(delta < 0 ? "left" : "right") edge")
             return
         }
         workspace.swapColumns(workspace.focusedIndex, newIndex)
@@ -666,7 +682,7 @@ extension TilingEngine {
             // Said out loud: a silent floor is why "set-column-width -10%
             // does nothing" was impossible to diagnose from the outside.
             print(
-                "[layout] \(Int(proportion * 100))% pedido, pero la app no baja de \(Int(minWidth))px - se vuelve a medir"
+                "[layout] \(Int(proportion * 100))% asked for, but the app won't go below \(Int(minWidth))px - re-measuring"
             )
         }
         return p
@@ -835,7 +851,7 @@ extension TilingEngine {
     func toggleWindowFloating() {
         if workspace.isFloatingActive {
             guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else {
-                print("toggle-window-floating: no hay ventana flotante enfocada")
+                print("toggle-window-floating: no focused floating window")
                 return
             }
             // Dialogs live in the floating layer permanently - tiling one
