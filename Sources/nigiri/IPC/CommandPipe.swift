@@ -21,14 +21,14 @@ final class CommandPipe {
     func start(onLine: @escaping @MainActor (String) -> Void) -> Bool {
         unlink(path)
         guard mkfifo(path, 0o600) == 0 else {
-            print("[fifo] no se pudo crear \(path): \(String(cString: strerror(errno)))")
+            print("[fifo] could not create \(path): \(String(cString: strerror(errno)))")
             return false
         }
         // O_RDWR, not O_RDONLY: keeps the FIFO open when writers come and go,
         // instead of hitting EOF after the first one disconnects.
         let fd = open(path, O_RDWR | O_NONBLOCK)
         guard fd >= 0 else {
-            print("[fifo] no se pudo abrir \(path): \(String(cString: strerror(errno)))")
+            print("[fifo] could not open \(path): \(String(cString: strerror(errno)))")
             return false
         }
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)

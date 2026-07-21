@@ -31,8 +31,8 @@ extension NigiriConfig {
                 // fixed 1200
             }
 
-            // Marca a donde va a caer la ventana que estas arrastrando con
-            // Mod+drag (por defecto encendida, azul translucido como en niri):
+            // Marks where the window you're dragging with Mod+drag is going to
+            // land (on by default, translucent blue like in niri):
             // insert-hint {
             //     // off
             //     color "#7fc8ff"
@@ -42,7 +42,7 @@ extension NigiriConfig {
             // empty-workspace-above-first
             // default-column-display "tabbed"
 
-            // Recorte del area util (una barra, por ejemplo):
+            // Cut out of the usable area (a bar, for example):
             // struts {
             //     top 0
             //     bottom 0
@@ -50,8 +50,8 @@ extension NigiriConfig {
             //     right 0
             // }
 
-            // Sombra: macOS dibuja la de cada ventana y no se puede reemplazar,
-            // asi que estos valores gobiernan el resplandor del ring.
+            // Shadow: macOS draws every window's own and it can't be replaced,
+            // so these values govern the ring's glow instead.
             // shadow {
             //     softness 30
             //     offset x=0 y=5
@@ -65,7 +65,7 @@ extension NigiriConfig {
                 active-gradient from="#7355a6" to="#cba6f7" angle=45
             }
 
-            // Borde para las ventanas NO enfocadas (la enfocada lleva el ring):
+            // Border for the NON-focused windows (the focused one gets the ring):
             // border {
             //     width 2
             //     inactive-color "#585b70"
@@ -77,7 +77,7 @@ extension NigiriConfig {
         //     backdrop-color "#0d0d0d"
         // }
 
-        // Variables para todo lo que nigiri lanza (valor vacio = borrarla):
+        // Variables for everything nigiri spawns (empty value = unset it):
         // environment {
         //     TERM "xterm-256color"
         // }
@@ -85,8 +85,8 @@ extension NigiriConfig {
         // screenshot-path "~/Desktop/Screenshot %Y-%m-%d %H.%M.%S.png"
 
         // input {
-        //     // Que significa Mod+ (por defecto Cmd+Opt; niri usa Super, que
-        //     // macOS se reserva):
+        //     // What Mod+ means (Cmd+Opt by default; niri uses Super, which
+        //     // macOS reserves for itself):
         //     // mod-key "Ctrl"
         //     focus-follows-mouse
         //     warp-mouse-to-focus
@@ -102,9 +102,9 @@ extension NigiriConfig {
         //     three-finger-down focus-workspace-down
         //     four-finger-up open-overview
         //     four-finger-down close-overview
-        //     // Magic Mouse (superficie tactil del mouse). Vacios por defecto:
-        //     // con UN dedo el arrastre vertical es el scroll, asi que atarlo
-        //     // dispararia en cada scroll. Con dos dedos es libre.
+        //     // Magic Mouse (the mouse's touch surface). Empty by default:
+        //     // with ONE finger a vertical drag IS the scroll, so binding it
+        //     // would fire on every scroll. With two fingers it's free.
         //     mouse-two-finger-left focus-column-right
         //     mouse-two-finger-right focus-column-left
         // }
@@ -118,13 +118,13 @@ extension NigiriConfig {
         //     mod-ctrl-up move-column-to-workspace-up
         // }
 
-        // Botones del mouse: se escriben como cualquier bind, dentro de binds{}.
+        // Mouse buttons: written like any other bind, inside binds{}.
         //     Mod+MouseMiddle { close-window; }
         //     MouseBack       { focus-column-left; }
         //     MouseForward    { focus-column-right; }
-        // Ojo: un bind gana sobre el drag, no al reves. El tap consulta el bind
-        // ANTES de reclamar el arrastre, asi que declarar Mod+MouseLeft aca deja
-        // sin Mod+arrastrar-para-mover.
+        // Careful: a bind wins over the drag, not the other way around. The tap
+        // checks the bind BEFORE claiming the drag, so declaring Mod+MouseLeft
+        // here leaves you without Mod+drag-to-move.
 
         // spawn-at-startup "open" "-a" "Discord"
 
@@ -218,7 +218,7 @@ extension NigiriConfig {
             Mod+Grave { switch-preset-column-width-back; }
             Cmd+Ctrl+Shift+Page_Up   { move-workspace-up; }
             Cmd+Ctrl+Shift+Page_Down { move-workspace-down; }
-            // Hyper = Cmd+Opt+Ctrl+Shift (no pisa el Cmd+Opt+Esc de Force Quit)
+            // Hyper = Cmd+Opt+Ctrl+Shift (doesn't clash with Force Quit's Cmd+Opt+Esc)
             Hyper+Escape { quit; }
         }
 

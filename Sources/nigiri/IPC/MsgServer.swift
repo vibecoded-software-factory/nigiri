@@ -124,11 +124,11 @@ final class MsgServer {
             let n = text.withUnsafeBufferPointer { write(fd, $0.baseAddress! + sent, text.count - sent) }
             if n > 0 { sent += n; continue }
             guard errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR else {
-                print("[ipc] respuesta cortada a los \(sent)/\(text.count) bytes: errno \(errno)")
+                print("[ipc] response truncated at \(sent)/\(text.count) bytes: errno \(errno)")
                 return false
             }
             guard Date().timeIntervalSince(started) < deadline else {
-                print("[ipc] el cliente dejo de leer: respuesta cortada a los \(sent)/\(text.count) bytes")
+                print("[ipc] the client stopped reading: response truncated at \(sent)/\(text.count) bytes")
                 return false
             }
             var poller = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
@@ -156,7 +156,7 @@ final class MsgServer {
         // allowed to stall the engine: it never closed the socket, so its
         // read source's EOF path would never fire on its own.
         for fd in streamFDs where !send(fd, line) {
-            print("[msg] event-stream subscriber \(fd) no drena - lo suelto")
+            print("[msg] event-stream subscriber \(fd) isn't draining - dropping it")
             drop(fd)
         }
     }

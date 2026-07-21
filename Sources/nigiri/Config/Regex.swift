@@ -11,7 +11,7 @@ struct Regex {
     init(_ pattern: String) {
         self.pattern = pattern
         regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-        if regex == nil { print("[config] regex invalida, se ignora: \(pattern)") }
+        if regex == nil { print("[config] invalid regex, ignored: \(pattern)") }
     }
 
     func matches(_ text: String) -> Bool {

@@ -275,7 +275,7 @@ struct NigiriConfig {
                 return name.localizedCaseInsensitiveContains(preferred)
             }
             if chosen == nil {
-                print("[config] binds-layout \"\(preferred)\" no esta instalado - uso el layout activo")
+                print("[config] binds-layout \"\(preferred)\" is not installed - using the active layout")
             }
         }
         let source = chosen ?? TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
@@ -362,7 +362,7 @@ struct NigiriConfig {
         let ignored = mods.intersection(["cmd", "opt"])
         if !ignored.isEmpty {
             print(
-                "[config] \(combo): la rueda no distingue \(ignored.sorted().joined(separator: "/")) - se ignora(n)"
+                "[config] \(combo): the wheel can't tell \(ignored.sorted().joined(separator: "/")) apart - ignored"
             )
             mods.subtract(ignored)
         }
@@ -469,7 +469,7 @@ struct NigiriConfig {
             hex = hex.map { "\($0)\($0)" }.joined()
         }
         guard hex.count == 6 || hex.count == 8, let value = UInt32(hex, radix: 16) else {
-            print("[config] color invalido, se ignora: \(raw)")
+            print("[config] invalid color, ignored: \(raw)")
             return nil
         }
         let hasAlpha = hex.count == 8

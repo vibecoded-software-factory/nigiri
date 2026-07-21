@@ -72,7 +72,7 @@ extension TilingEngine {
             if let bundleID = app.bundleIdentifier,
                 Self.systemUIAgentBundleIDs.contains(where: { bundleID.hasPrefix($0) })
             {
-                debugLog("[collect] skip \(app.localizedName ?? "?"): agente de UI del sistema (\(bundleID))")
+                debugLog("[collect] skip \(app.localizedName ?? "?"): system UI agent (\(bundleID))")
                 continue
             }
             guard let name = app.localizedName,
@@ -91,7 +91,7 @@ extension TilingEngine {
             watcher.watch(pid: app.processIdentifier)
             for w in axWindows {
                 if isAccessory, !Self.dialogLikeAccessoryWindow(w) {
-                    debugLog("[collect] skip ventana accesoria de \(name): no parece un dialogo")
+                    debugLog("[collect] skip accessory window of \(name): doesn't look like a dialog")
                     continue
                 }
                 // Fast path for a window already in the model: its subrole,
@@ -287,7 +287,7 @@ extension TilingEngine {
         // display disappearing fires didChangeScreenParameters, which calls
         // straight into here. It also used to leave no trace at all.
         guard ScreenGeometry.hasUsableScreen else {
-            print("[layout] no hay ninguna pantalla: se pospone el layout")
+            print("[layout] no screen at all: postponing the layout")
             return
         }
         let t0 = debugEnabled ? DispatchTime.now() : nil
@@ -442,7 +442,7 @@ extension TilingEngine {
             for window in demoted {
                 window.positionRefusals = 0
                 ws.floatingWindows.append(window)
-                print("[layout] \(window.title): rechaza moverse, pasa a flotante")
+                print("[layout] \(window.title): refuses to move, demoted to floating")
             }
             ColumnLayoutEngine.newEpoch()
         }
@@ -546,7 +546,7 @@ extension TilingEngine {
             // always "who owns it", and reproducing a transient popup on
             // demand to answer that is not always possible.
             print(
-                "[adopt] \(appName) [\(app?.bundleIdentifier ?? "sin bundle id")] \"\(title)\" \(kind == .dialog ? "flotante" : "tileada")"
+                "[adopt] \(appName) [\(app?.bundleIdentifier ?? "no bundle id")] \"\(title)\" \(kind == .dialog ? "floating" : "tiled")"
             )
             let rule = matchingWindowRule(appName: appName, bundleID: app?.bundleIdentifier, title: title)
             let window = ManagedWindow(axElement: element, pid: pid, title: title)
@@ -777,7 +777,7 @@ extension TilingEngine {
             print(
                 "no windows found yet for: \(tileAll ? "all apps" : watchedAppNames.joined(separator: ", "))")
         } else if managed.isEmpty {
-            print("tiled 0 column(s): \(workspace.floatingWindows.count) flotante(s)")
+            print("tiled 0 column(s): \(workspace.floatingWindows.count) floating")
         } else {
             print(
                 "tiled \(workspace.columns.count) column(s): \(managed.map { $0.title }.joined(separator: ", "))"
@@ -982,10 +982,10 @@ extension TilingEngine {
         // window that moved after its snapshot must still fade out over the
         // slot it actually occupied.
         guard let frame = window.lastActualFrame ?? snapshot?.frame ?? window.lastRequestedFrame else {
-            print("[close] \(window.title): sin frame conocido, no hay ghost")
+            print("[close] \(window.title): no known frame, no ghost")
             return
         }
-        print("[close] ghost de \(window.title)" + (snapshot == nil ? " (sin snapshot)" : ""))
+        print("[close] ghost of \(window.title)" + (snapshot == nil ? " (no snapshot)" : ""))
         let contents: Any? = snapshot.flatMap { CVPixelBufferGetIOSurface($0.buffer) }
             .map { unsafeBitCast($0.takeUnretainedValue(), to: IOSurface.self) }
         ghosts.play(contents: contents, retaining: snapshot?.buffer, axFrame: frame, curve: curve)

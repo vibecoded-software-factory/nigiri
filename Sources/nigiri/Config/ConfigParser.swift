@@ -45,7 +45,7 @@ extension NigiriConfig {
                 let (value, next, terminated) = readQuoted(chars, from: i)
                 if !terminated {
                     print(
-                        "[config] comilla sin cerrar en la linea \(lineOf(i)): se descarta el resto del archivo"
+                        "[config] unterminated quote on line \(lineOf(i)): discarding the rest of the file"
                     )
                 }
                 current += value
@@ -72,7 +72,7 @@ extension NigiriConfig {
                         }
                         i += 1
                     }
-                    if depth > 0 { print("[config] comentario /* sin cerrar en la linea \(lineOf(i)))") }
+                    if depth > 0 { print("[config] unterminated /* comment on line \(lineOf(i)))") }
                     flush()
                     continue
                 }
@@ -149,7 +149,7 @@ extension NigiriConfig {
             value.append(chars[i])
             i += 1
         }
-        print("[config] raw string sin cerrar: se descarta el resto del archivo")
+        print("[config] unterminated raw string: discarding the rest of the file")
         return (value, chars.count)
     }
 
@@ -434,7 +434,7 @@ extension NigiriConfig {
                     // there is no default-duration table here (niri's lives in
                     // its own Default impls). Say so instead of dropping the
                     // whole block without a word.
-                    print("[config] \(t): curve sin duration-ms, se ignora")
+                    print("[config] \(t): curve without duration-ms, ignored")
                 }
             }
         }
@@ -631,11 +631,11 @@ extension NigiriConfig {
                         NigiriConfig.modKey = mods
                         if !config.binds.isEmpty {
                             print(
-                                "[config] mod-key declarado despues de binds{}: los ya parseados quedaron con el anterior"
+                                "[config] mod-key declared after binds{}: the ones already parsed kept the old one"
                             )
                         }
                     } else {
-                        print("[config] mod-key desconocido: \(parts.last ?? "")")
+                        print("[config] unknown mod-key: \(parts.last ?? "")")
                     }
                 case "focus-follows-mouse": config.focusFollowsMouse = true
                 case "warp-mouse-to-focus": config.warpMouseToFocus = true
@@ -693,7 +693,7 @@ extension NigiriConfig {
                 guard let direction = written.last,
                     ["up", "down", "left", "right"].contains(direction)
                 else {
-                    print("[config] wheel: \(parts[0]) no termina en up/down/left/right - se ignora")
+                    print("[config] wheel: \(parts[0]) does not end in up/down/left/right - ignored")
                     continue
                 }
                 let mods = Set(written.dropLast().compactMap { NigiriConfig.canonicalModifier($0) })
@@ -875,7 +875,7 @@ extension NigiriConfig {
                 }.joined(separator: " ")
                 if mods.isEmpty {
                     print(
-                        "[config] bind \(t) no lleva modificador: esa tecla queda tomada en todo el sistema")
+                        "[config] bind \(t) has no modifier: that key is taken system-wide")
                 }
                 var bind = Bind(combo: t, keyCode: keyCode, modifiers: mods, action: rejoined)
                 for p in props {

@@ -335,7 +335,7 @@ extension TilingEngine {
             }
         }
         print(
-            "binds resueltos contra el layout: \(NigiriConfig.layoutKeyCodesSource)\(config.bindsLayout.map { " (fijado en config: \($0))" } ?? "")"
+            "binds resolved against layout: \(NigiriConfig.layoutKeyCodesSource)\(config.bindsLayout.map { " (pinned in config: \($0))" } ?? "")"
         )
         let bound = Set(
             config.binds.compactMap { bind -> String? in

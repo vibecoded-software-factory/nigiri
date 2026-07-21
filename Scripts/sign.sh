@@ -7,9 +7,9 @@ CONFIG="${1:-debug}"
 BIN=".build/$CONFIG/nigiri"
 
 if [ ! -f "$BIN" ]; then
-  echo "no existe $BIN — corré 'swift build' (o 'swift build -c release') antes" >&2
+  echo "$BIN does not exist - run 'swift build' (or 'swift build -c release') first" >&2
   exit 1
 fi
 
 codesign --force --sign - "$BIN"
-echo "firmado (ad-hoc, identidad estable): $BIN"
+echo "signed (ad-hoc, stable identity): $BIN"

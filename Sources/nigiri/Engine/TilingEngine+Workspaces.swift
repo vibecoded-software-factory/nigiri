@@ -305,15 +305,15 @@ extension TilingEngine {
     // opposite of the muscle memory, on the nine Mod+Shift+N keys.
     func moveColumnToWorkspace(_ number: Int, focus: Bool = true) {
         guard !isTransitioningWorkspace else {
-            print("move-column-to-workspace: ignorado, hay un cambio de workspace en curso")
+            print("move-column-to-workspace: ignored, a workspace switch is in progress")
             return
         }
         guard !workspace.isFloatingActive else {
-            print("move-column-to-workspace: el foco esta en la capa flotante")
+            print("move-column-to-workspace: focus is on the floating layer")
             return
         }
         guard workspace.columns.indices.contains(workspace.focusedIndex) else {
-            print("move-column-to-workspace: no hay columna enfocada")
+            print("move-column-to-workspace: no focused column")
             return
         }
         // Dynamic model: past-the-end numbers land on the trailing empty
@@ -342,7 +342,7 @@ extension TilingEngine {
         // rather than on whatever happened to be focused there before.
         workspaces[targetIndex].focus(column: workspaces[targetIndex].columns.count - 1)
         workspaces[targetIndex].isFloatingActive = false
-        print("move-column-to-workspace \(number)\(focus ? " (siguiendo el foco)" : "")")
+        print("move-column-to-workspace \(number)\(focus ? " (following the focus)" : "")")
         if focus {
             // The normal animated switch - it restores the moved column from
             // the stash we just wrote, same as any other window arriving on
