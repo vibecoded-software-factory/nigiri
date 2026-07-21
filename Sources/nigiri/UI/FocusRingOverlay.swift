@@ -288,7 +288,10 @@ private final class RingView: NSView {
     }
 }
 
-private extension NSBezierPath {
+// Internal (not private): the inactive-border overlay strokes the exact same
+// path so its corners are the same clean arc as the ring's, instead of the
+// squared-off corner a thick CALayer border draws.
+extension NSBezierPath {
     var cgPath: CGPath {
         let path = CGMutablePath()
         var points = [CGPoint](repeating: .zero, count: 3)
