@@ -44,8 +44,10 @@ struct NigiriConfig {
         var isFloating: Bool?
         var atStartup: Bool?
 
-        func matches(app appName: String, bundleID: String?, title windowTitle: String,
-                     isActive active: Bool, isFloating floating: Bool, atStartup startup: Bool) -> Bool {
+        func matches(
+            app appName: String, bundleID: String?, title windowTitle: String,
+            isActive active: Bool, isFloating floating: Bool, atStartup startup: Bool
+        ) -> Bool {
             // app-id is reverse-DNS on Wayland, so the bundle identifier is
             // its macOS counterpart; the display name is accepted too, since
             // that is what a config written here would reach for first.
@@ -112,7 +114,9 @@ struct NigiriConfig {
         case fixed(CGFloat)
     }
     var presetColumnSizes: [PresetSize] = [.proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0)]
-    var presetWindowHeightSizes: [PresetSize] = [.proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0)]
+    var presetWindowHeightSizes: [PresetSize] = [
+        .proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0),
+    ]
     var presetColumnWidths: [CGFloat] = [1.0 / 3.0, 0.5, 2.0 / 3.0]
     // niri's `preset-column-widths { fixed 1200; }` - pixels, converted to
     // niri's preset-window-heights: its OWN list, not the widths reused.
@@ -121,23 +125,29 @@ struct NigiriConfig {
     // See macOSWindowCornerRadius: the radius the ring/border round their
     // corners by, matching macOS's own window corner. Measured, not guessed.
     var cornerRadius: CGFloat = 19
-    var ringFrom: NSColor = NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1)
-    var ringTo: NSColor = NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
+    var ringFrom: NSColor = NSColor(
+        calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1)
+    var ringTo: NSColor = NSColor(
+        calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
     // niri draws the focus ring around EVERY window - active colour on the
     // focused one, inactive-color on the rest. nigiri used to have no
     // inactive ring at all, so with `border { off }` (niri's default, and
     // this user's config) non-focused windows wore no decoration whatsoever.
-    var ringInactiveColor: NSColor = NSColor(calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
+    var ringInactiveColor: NSColor = NSColor(
+        calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
     var ringOff: Bool = false
     // layout { tab-indicator { active-gradient / active-color / inactive-color } }
-    var tabActiveColor: NSColor = NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
-    var tabInactiveColor: NSColor = NSColor(calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
+    var tabActiveColor: NSColor = NSColor(
+        calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
+    var tabInactiveColor: NSColor = NSColor(
+        calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
     var rules: [Rule] = []
     var binds: [Bind] = []
     // niri's layout.border: a plain stroke on NON-focused windows (the
     // focused one wears the focus ring). Width 0 = off, niri's default.
     var borderWidth: CGFloat = 0
-    var borderInactiveColor: NSColor = NSColor(calibratedRed: 0x58 / 255.0, green: 0x5B / 255.0, blue: 0x70 / 255.0, alpha: 1)
+    var borderInactiveColor: NSColor = NSColor(
+        calibratedRed: 0x58 / 255.0, green: 0x5B / 255.0, blue: 0x70 / 255.0, alpha: 1)
     // niri's input section, the parts with an AX-world equivalent.
     var focusFollowsMouse: Bool = false
     var warpMouseToFocus: Bool = false
@@ -210,7 +220,8 @@ struct NigiriConfig {
     // niri's layout { insert-hint }: default on, rgba(127,200,255,128)
     // (niri-config/src/appearance.rs, InsertHint::default).
     var insertHintOff = false
-    var insertHintColor = NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 128 / 255.0)
+    var insertHintColor = NSColor(
+        calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 128 / 255.0)
     var shadowOn = false
     var shadowSoftness: CGFloat = 30
     var shadowOffset = CGSize(width: 0, height: 5)
@@ -240,7 +251,6 @@ struct NigiriConfig {
     // The layout the last resolution actually used, for the startup log.
     static var layoutKeyCodesSource: String = "?"
 
-
     // Ask the current input source what each keycode types, unmodified.
     // Rebuilt on demand (and whenever the layout changes) - a laptop with
     // two layouts installed can switch under us.
@@ -253,14 +263,20 @@ struct NigiriConfig {
     static func refreshLayoutKeyCodes(preferring preferred: String? = nil) {
         var chosen: TISInputSource? = nil
         if let preferred, !preferred.isEmpty,
-           let all = TISCreateInputSourceList([kTISPropertyInputSourceCategory: kTISCategoryKeyboardInputSource] as CFDictionary, true)?
-               .takeRetainedValue() as? [TISInputSource] {
+            let all = TISCreateInputSourceList(
+                [kTISPropertyInputSourceCategory: kTISCategoryKeyboardInputSource] as CFDictionary, true)?
+                .takeRetainedValue() as? [TISInputSource]
+        {
             chosen = all.first { source in
-                guard let nameRaw = TISGetInputSourceProperty(source, kTISPropertyLocalizedName) else { return false }
+                guard let nameRaw = TISGetInputSourceProperty(source, kTISPropertyLocalizedName) else {
+                    return false
+                }
                 let name = Unmanaged<CFString>.fromOpaque(nameRaw).takeUnretainedValue() as String
                 return name.localizedCaseInsensitiveContains(preferred)
             }
-            if chosen == nil { print("[config] binds-layout \"\(preferred)\" no esta instalado - uso el layout activo") }
+            if chosen == nil {
+                print("[config] binds-layout \"\(preferred)\" no esta instalado - uso el layout activo")
+            }
         }
         let source = chosen ?? TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
         guard let source, let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
@@ -274,7 +290,9 @@ struct NigiriConfig {
         let data = Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
         var map: [String: CGKeyCode] = [:]
         data.withUnsafeBytes { buffer in
-            guard let layout = buffer.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return }
+            guard let layout = buffer.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else {
+                return
+            }
             for code in CGKeyCode(0)...CGKeyCode(127) {
                 var deadKeyState: UInt32 = 0
                 var length = 0
@@ -343,7 +361,9 @@ struct NigiriConfig {
         var mods = Set(parts.dropLast().compactMap { canonicalModifier(String($0)) })
         let ignored = mods.intersection(["cmd", "opt"])
         if !ignored.isEmpty {
-            print("[config] \(combo): la rueda no distingue \(ignored.sorted().joined(separator: "/")) - se ignora(n)")
+            print(
+                "[config] \(combo): la rueda no distingue \(ignored.sorted().joined(separator: "/")) - se ignora(n)"
+            )
             mods.subtract(ignored)
         }
         // niri has no unmodified wheel binds (a bare wheel is scrolling), so a
@@ -363,7 +383,8 @@ struct NigiriConfig {
         // character to look up, and a layout that lacks a key falls back
         // rather than losing the bind).
         let character = keyNameCharacters[keyName] ?? keyName
-        guard let keyCode = (character.count == 1 ? layoutKeyCodes[character] : nil) ?? keyCodes[keyName] else { return nil }
+        guard let keyCode = (character.count == 1 ? layoutKeyCodes[character] : nil) ?? keyCodes[keyName]
+        else { return nil }
         var mods: HotkeyListener.Modifiers = []
         for part in parts.dropLast() {
             switch part {

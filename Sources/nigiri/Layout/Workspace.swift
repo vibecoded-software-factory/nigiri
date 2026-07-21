@@ -8,7 +8,9 @@ import ApplicationServices
 final class Workspace {
     // Stable across reordering: move-workspace-up/down shuffles the array,
     // so the index is not an identity an IPC client can track.
-    let id: UInt64 = { Workspace.nextID += 1; return Workspace.nextID }()
+    let id: UInt64 = {
+        Workspace.nextID += 1; return Workspace.nextID
+    }()
     nonisolated(unsafe) private static var nextID: UInt64 = 0
 
     // private(set): the structural mutators below keep focusedIndex pointing
@@ -45,7 +47,9 @@ final class Workspace {
     // window goes floating.
     @discardableResult
     func detachFromTiling(_ window: ManagedWindow) -> Bool {
-        guard let ci = columns.firstIndex(where: { $0.windows.contains { $0 === window } }) else { return false }
+        guard let ci = columns.firstIndex(where: { $0.windows.contains { $0 === window } }) else {
+            return false
+        }
         columns[ci].removeWindows { $0 === window }
         if columns[ci].windows.isEmpty { removeColumn(at: ci) }
         if fullscreenWindow === window { fullscreenWindow = nil }
@@ -56,12 +60,15 @@ final class Workspace {
     func clampFocus() {
         setFocusedIndex(focusedIndex)
         for c in columns { c.clampFocus() }
-        floatingFocusedIndex = floatingWindows.isEmpty ? 0 : min(max(0, floatingFocusedIndex), floatingWindows.count - 1)
+        floatingFocusedIndex =
+            floatingWindows.isEmpty ? 0 : min(max(0, floatingFocusedIndex), floatingWindows.count - 1)
         if floatingWindows.isEmpty { isFloatingActive = false }
     }
     @discardableResult
     func focus(column window: ManagedWindow) -> Bool {
-        guard let ci = columns.firstIndex(where: { $0.windows.contains { $0 === window } }) else { return false }
+        guard let ci = columns.firstIndex(where: { $0.windows.contains { $0 === window } }) else {
+            return false
+        }
         focus(column: ci)
         columns[ci].focus(window: window)
         isFloatingActive = false

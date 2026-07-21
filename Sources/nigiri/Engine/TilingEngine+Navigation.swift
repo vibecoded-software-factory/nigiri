@@ -17,7 +17,9 @@ extension TilingEngine {
         workspace.focus(column: wrapped)
         reflow()
         focusCurrentColumn()
-        print("focus-column-\(delta < 0 ? "left-or-last" : "right-or-first") -> column \(workspace.focusedIndex)")
+        print(
+            "focus-column-\(delta < 0 ? "left-or-last" : "right-or-first") -> column \(workspace.focusedIndex)"
+        )
     }
 
     // niri's focus-column <index>, 1-based like every other numbered action.
@@ -100,7 +102,8 @@ extension TilingEngine {
         let neighbour = workspace.columns[neighbourIndex]
         guard let mine = focusedStackWindow(), let theirs = neighbour.focusedWindow else { return }
         guard let myRow = column.windows.firstIndex(where: { $0 === mine }),
-              let theirRow = neighbour.windows.firstIndex(where: { $0 === theirs }) else { return }
+            let theirRow = neighbour.windows.firstIndex(where: { $0 === theirs })
+        else { return }
         column.replaceWindow(at: myRow, with: theirs)
         neighbour.replaceWindow(at: theirRow, with: mine)
         workspace.focus(column: neighbourIndex)
@@ -112,7 +115,9 @@ extension TilingEngine {
 
     // niri's move-column-to-index / move-workspace-to-index, both 1-based.
     func moveColumnToIndex(_ index: Int) {
-        guard !workspace.isFloatingActive, workspace.columns.indices.contains(workspace.focusedIndex) else { return }
+        guard !workspace.isFloatingActive, workspace.columns.indices.contains(workspace.focusedIndex) else {
+            return
+        }
         let target = min(max(0, index - 1), workspace.columns.count - 1)
         guard target != workspace.focusedIndex else { return }
         guard let column = workspace.removeColumn(at: workspace.focusedIndex) else { return }
@@ -195,7 +200,8 @@ extension TilingEngine {
         }
         if let frame = WindowMover.currentFrame(window.axElement) {
             window.stashedFrame = frame
-            _ = ColumnLayoutEngine.applyFrame(window, target: parkedOffScreen(frame, screenFrame: screenFrame))
+            _ = ColumnLayoutEngine.applyFrame(
+                window, target: parkedOffScreen(frame, screenFrame: screenFrame))
         }
         print("move-window-to-workspace \(number)")
         if focus { focusWorkspace(targetIndex + 1) } else { reflow() }
@@ -250,7 +256,8 @@ extension TilingEngine {
         }
         let windows = workspace.floatingWindows
         guard windows.indices.contains(workspace.floatingFocusedIndex),
-              let current = WindowMover.currentFrame(windows[workspace.floatingFocusedIndex].axElement) else { return }
+            let current = WindowMover.currentFrame(windows[workspace.floatingFocusedIndex].axElement)
+        else { return }
         var best: (index: Int, distance: CGFloat)?
         for (i, w) in windows.enumerated() where i != workspace.floatingFocusedIndex {
             guard let frame = WindowMover.currentFrame(w.axElement) else { continue }

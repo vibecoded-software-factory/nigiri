@@ -35,7 +35,6 @@ final class TilingEngine {
         "com.apple.coreservices.uiagent",
     ]
 
-
     // Window rules come from the config file's window-rules section
     // (defaults reproduce the user's real niri rules: AWS VPN not
     // floating, Picture-in-Picture floating) - only what's implementable
@@ -71,13 +70,16 @@ final class TilingEngine {
     // so a general rule setting one field and a specific one setting
     // another could not combine - and a rule with no `match` at all never
     // applied, which is exactly how niri writes "for every window".
-    func matchingWindowRule(appName: String, bundleID: String? = nil, title: String,
-                            isActive: Bool = false, isFloating: Bool = false) -> NigiriConfig.Rule? {
+    func matchingWindowRule(
+        appName: String, bundleID: String? = nil, title: String,
+        isActive: Bool = false, isFloating: Bool = false
+    ) -> NigiriConfig.Rule? {
         let atStartup = Date().timeIntervalSince(startedAt) < 5
         func hits(_ matchers: [NigiriConfig.Matcher]) -> Bool {
             matchers.contains {
-                $0.matches(app: appName, bundleID: bundleID, title: title,
-                           isActive: isActive, isFloating: isFloating, atStartup: atStartup)
+                $0.matches(
+                    app: appName, bundleID: bundleID, title: title,
+                    isActive: isActive, isFloating: isFloating, atStartup: atStartup)
             }
         }
         var merged: NigiriConfig.Rule?
@@ -396,7 +398,9 @@ final class TilingEngine {
     // vertical stack (see Column.focusedWindowIndex).
     func focusedManagedWindow() -> ManagedWindow? {
         if workspace.isFloatingActive {
-            guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else { return workspace.floatingWindows.first }
+            guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else {
+                return workspace.floatingWindows.first
+            }
             return workspace.floatingWindows[workspace.floatingFocusedIndex]
         }
         guard workspace.columns.indices.contains(workspace.focusedIndex) else { return nil }
@@ -412,11 +416,15 @@ final class TilingEngine {
     // guard-and-return each call site previously spelled out by hand,
     // where a copy could (and did) drift out of sync with the rest.
     func focusedColumn() -> Column? {
-        guard !workspace.isFloatingActive, workspace.columns.indices.contains(workspace.focusedIndex) else { return nil }
+        guard !workspace.isFloatingActive, workspace.columns.indices.contains(workspace.focusedIndex) else {
+            return nil
+        }
         return workspace.columns[workspace.focusedIndex]
     }
     func focusedStackWindow() -> ManagedWindow? {
-        guard let column = focusedColumn(), column.windows.indices.contains(column.focusedWindowIndex) else { return nil }
+        guard let column = focusedColumn(), column.windows.indices.contains(column.focusedWindowIndex) else {
+            return nil
+        }
         return column.windows[column.focusedWindowIndex]
     }
 
@@ -471,18 +479,22 @@ final class TilingEngine {
     // 8.3ms tick.
     func decorationCandidates(excluding excluded: [ManagedWindow]) -> [DecorationCandidate] {
         workspace.allWindows.compactMap { w in
-            guard !excluded.contains(where: { $0 === w }), let frame = WindowMover.currentFrame(w.axElement) else { return nil }
+            guard !excluded.contains(where: { $0 === w }), let frame = WindowMover.currentFrame(w.axElement)
+            else { return nil }
             let minimized: Bool? = AX.attribute(w.axElement, kAXMinimizedAttribute as String)
-            return DecorationCandidate(frame: frame, minimized: minimized == true,
-                                       isFloating: workspace.floatingWindows.contains { $0 === w })
+            return DecorationCandidate(
+                frame: frame, minimized: minimized == true,
+                isFloating: workspace.floatingWindows.contains { $0 === w })
         }
     }
 
     func updateInactiveDecorations() {
         let focused = focusedManagedWindow()
         let screenFrame = usableScreen().frame
-        borders.update(frames: Self.decoratedFrames(decorationCandidates(excluding: focused.map { [$0] } ?? []),
-                                                    screen: screenFrame))
+        borders.update(
+            frames: Self.decoratedFrames(
+                decorationCandidates(excluding: focused.map { [$0] } ?? []),
+                screen: screenFrame))
     }
 
     // Tab indicators for every visible tabbed column, refreshed with the
@@ -496,18 +508,24 @@ final class TilingEngine {
         // THIRD hand-rolled derivation of the same column->screen projection
         // and the only grantedX outside LayoutEngine.swift, which is exactly
         // how layout() and targetFrames drifted apart once already.
-        let geometry = ColumnLayoutEngine.columnGeometry(columns: workspace.columns, in: screenFrame,
-                                                         maximizedIndex: workspace.maximizedIndex,
-                                                         viewOffset: workspace.viewOffset)
+        let geometry = ColumnLayoutEngine.columnGeometry(
+            columns: workspace.columns, in: screenFrame,
+            maximizedIndex: workspace.maximizedIndex,
+            viewOffset: workspace.viewOffset)
         for geo in geometry where geo.column.isTabbed {
             // Same rule as the borders: a column scrolled out of view would
             // otherwise paint its indicator across the visible windows.
-            guard Self.decorationIsVisible(CGRect(x: geo.x, y: screenFrame.minY, width: geo.width, height: 1),
-                                           on: screenFrame) else { continue }
-            bars.append((
-                frame: CGRect(x: geo.x, y: geo.y, width: geo.width, height: geo.height),
-                count: geo.column.windows.count,
-                active: min(geo.column.focusedWindowIndex, geo.column.windows.count - 1)))
+            guard
+                Self.decorationIsVisible(
+                    CGRect(x: geo.x, y: screenFrame.minY, width: geo.width, height: 1),
+                    on: screenFrame)
+            else { continue }
+            bars.append(
+                (
+                    frame: CGRect(x: geo.x, y: geo.y, width: geo.width, height: geo.height),
+                    count: geo.column.windows.count,
+                    active: min(geo.column.focusedWindowIndex, geo.column.windows.count - 1)
+                ))
         }
         tabIndicators.update(bars: bars)
     }
@@ -584,7 +602,8 @@ final class TilingEngine {
                 // nobody can prune - a full-size CGImage retained until the
                 // agent restarts.
                 guard !self.ghostedWindows.contains(id),
-                      self.workspaces.contains(where: { $0.allWindows.contains { $0.id == id } }) else { return }
+                    self.workspaces.contains(where: { $0.allWindows.contains { $0.id == id } })
+                else { return }
                 self.closeSnapshots[id] = (buffer, frame)
             }
         }
@@ -613,16 +632,12 @@ final class TilingEngine {
     // to every action).
     enum CollectedKind { case tiled, dialog }
 
-
     // Binds come from the config file (see NigiriConfig) - registration
     // happens in applyConfig, re-run on every live reload. The DEFAULT
     // config keeps letter keys unbound: letter combos collide with app
     // menu equivalents (Hide Others, Fullscreen) - a user editing their
     // config owns that tradeoff.
     let listener = HotkeyListener()
-
-
-
 
     var hotkeyOverlay = HotkeyOverlay(bindings: [])
 
@@ -650,7 +665,8 @@ final class TilingEngine {
         "consume-window-into-column", "expel-window-from-column",
         "maximize-column", "maximize-window-to-edges", "fullscreen-window",
         "toggle-windowed-fullscreen", "native-fullscreen", "close-window",
-        "switch-preset-column-width", "switch-preset-column-width-back", "switch-preset-window-height", "switch-preset-window-width",
+        "switch-preset-column-width", "switch-preset-column-width-back", "switch-preset-window-height",
+        "switch-preset-window-width",
         "set-column-width", "set-window-height", "reset-window-height",
         "expand-column-to-available-width", "resize-edge",
         "center-column", "center-visible-columns",
@@ -664,9 +680,6 @@ final class TilingEngine {
         "consume-or-expel-right": "consume-or-expel-window-right",
         "spawn-sh": "spawn",
     ]
-
-
-
 
     init() {
         let rest = Array(cliArgs.dropFirst())
@@ -687,369 +700,406 @@ final class TilingEngine {
         for (i, ws) in workspaces.enumerated() where i != activeWorkspaceIndex {
             for w in ws.allWindows {
                 guard let current = WindowMover.currentFrame(w.axElement),
-                      current.origin.x >= screenFrame.maxX - 2 else { continue }
+                    current.origin.x >= screenFrame.maxX - 2
+                else { continue }
                 // Stash always precedes a park, so stashedFrame is normally
                 // set; the fallback keeps even a hole in that invariant
                 // from stranding a window invisibly.
-                let fallback = CGRect(x: screenFrame.midX - current.width / 2,
-                                      y: screenFrame.midY - current.height / 2,
-                                      width: current.width, height: current.height)
+                let fallback = CGRect(
+                    x: screenFrame.midX - current.width / 2,
+                    y: screenFrame.midY - current.height / 2,
+                    width: current.width, height: current.height)
                 try? WindowMover.setFrame(w.axElement, to: w.stashedFrame ?? fallback)
             }
         }
     }
 
     func start() -> Never {
-    AX.setGlobalMessagingTimeout()
-    watcher.onLayoutInvalidated = { self.scheduleRelayout() }
-    watcher.onWindowDestroyed = { element in
-        guard let window = self.knownWindow(for: element) else { return }
-        self.playCloseGhost(window)
-    }
-    // Mission Control dismissed -> the ring re-frames the focused window.
-    // The overlay only knows it hid itself; where the ring belongs is this
-    // model's knowledge.
-    ring.onSystemUIDismissed = { self.updateRing() }
-    ring.onSystemUIShown = { self.borders.hideAll(); self.tabIndicators.hideAll() }
-
-    // Lightweight path for cross-app focus changes: just re-point the ring,
-    // without collectCurrentAXWindows()'s full re-scan of every app's
-    // windows or a full relayout pass - that's what made following focus
-    // feel slow, on top of being inconsistent. Skipped mid workspace
-    // transition: focusCurrentColumn() inside the transition chain fires
-    // this notification itself, and reacting to that echo here would start
-    // a reflow competing with the transition's own.
-    // The observer blocks are @Sendable in the current SDK; everything they
-    // call is main-thread state (and queue: .main guarantees they run
-    // there), so MainActor.assumeIsolated states that fact to the compiler
-    // instead of scattering Sendable annotations over a single-threaded app.
-    let onAppActivated = MainActorCallback {
-        guard !self.isTransitioningWorkspace, !self.isOverviewActive else { return }
-        // OUR OWN activation, echoed back: focusCurrentColumn calls
-        // NSRunningApplication.activate, macOS notifies, and this handler
-        // used to run a SECOND full reflow for a focus change nigiri had
-        // just made itself - two reflows (and ~40 extra AX reads at ten
-        // windows) per focus keypress. The ring still re-lands.
-        if Date().timeIntervalSince(self.lastSelfInitiatedActivation) < 0.15 {
-            self.updateRing()
-            return
+        AX.setGlobalMessagingTimeout()
+        watcher.onLayoutInvalidated = { self.scheduleRelayout() }
+        watcher.onWindowDestroyed = { element in
+            guard let window = self.knownWindow(for: element) else { return }
+            self.playCloseGhost(window)
         }
-        // Read once, use twice: the auto-switch and the focus sync both
-        // wanted the frontmost app's focused window.
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              let focusedElement = AX.focusedWindow(ofPid: frontApp.processIdentifier) else { return }
-        self.autoSwitchToFocusedWindowWorkspace(focusedElement: focusedElement)
-        guard !self.isTransitioningWorkspace else { return } // the auto-switch may have just started one
-        self.syncFocusIndex(focusedElement: focusedElement)
-        // Right after a workspace switch the strip was JUST laid out where
-        // it belongs, and macOS's focus can transiently land on whichever
-        // app happened to unhide/activate last - scrolling the strip to
-        // chase that opinion glided every window sideways moments after
-        // the vertical rise. Track the ring, but no strip scroll until the
-        // dust settles; any real focus change re-scrolls via later events.
-        guard Date().timeIntervalSince(self.lastWorkspaceSwitch) > 1.0 else {
-            self.updateRing()
-            return
+        // Mission Control dismissed -> the ring re-frames the focused window.
+        // The overlay only knows it hid itself; where the ring belongs is this
+        // model's knowledge.
+        ring.onSystemUIDismissed = { self.updateRing() }
+        ring.onSystemUIShown = {
+            self.borders.hideAll(); self.tabIndicators.hideAll()
         }
-        self.reflow() // clicking/Cmd-Tabbing to a window directly can change focusedIndex outside any of our own hotkeys - keep the strip scrolled to match; reflow() itself keeps the ring in sync every animation step
-    }
-    NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { _ in
-        MainActor.assumeIsolated { onAppActivated.run() }
-    }
 
-    // Plugging in a display, changing resolution, or toggling the Dock's
-    // auto-hide moves the working area under the whole layout - and every
-    // cached answer was measured against the old one. Nothing observed this
-    // before: the layout stayed wrong until an unrelated AX event.
-    let onScreenChange = MainActorCallback {
-        ColumnLayoutEngine.newEpoch()
-        print("[layout] cambio de pantalla: se re-mide todo")
-        self.relayout()
-    }
-    NotificationCenter.default.addObserver(
-        forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-    ) { _ in
-        MainActor.assumeIsolated { onScreenChange.run() }
-    }
-
-    // Switching input source moves every latin key to a different physical
-    // position, so the hotkeys registered for the old layout now sit under
-    // the wrong keys. Re-resolve and re-register (a no-op when the config
-    // pins binds-layout).
-    // NOT `?? NigiriConfig()`: a default config is destructive (it clears the
-    // window rules, the workspace names, every wheel/mouse action, and
-    // unregisters all 74 binds without registering any), and this fires on an
-    // event nobody controls - switching keyboard layout while the file is
-    // momentarily unreadable (stow re-linking, an editor between unlink and
-    // rename) would leave the session with no shortcuts at all, and it does
-    // not self-heal: this observer notifies on the layout change, not on the
-    // file coming back. Same policy the config watcher already applies.
-    let reloadForLayout = MainActorCallback {
-        guard let config = NigiriConfig.load() else {
-            print("[config] no se pudo leer al cambiar el layout de teclado - se mantiene la anterior")
-            // Re-apply what is already in force: the only thing this path
-            // actually needs is the keycodes resolved against the new layout.
-            if let current = self.lastAppliedConfig { self.applyConfig(current, initial: false) }
-            return
+        // Lightweight path for cross-app focus changes: just re-point the ring,
+        // without collectCurrentAXWindows()'s full re-scan of every app's
+        // windows or a full relayout pass - that's what made following focus
+        // feel slow, on top of being inconsistent. Skipped mid workspace
+        // transition: focusCurrentColumn() inside the transition chain fires
+        // this notification itself, and reacting to that echo here would start
+        // a reflow competing with the transition's own.
+        // The observer blocks are @Sendable in the current SDK; everything they
+        // call is main-thread state (and queue: .main guarantees they run
+        // there), so MainActor.assumeIsolated states that fact to the compiler
+        // instead of scattering Sendable annotations over a single-threaded app.
+        let onAppActivated = MainActorCallback {
+            guard !self.isTransitioningWorkspace, !self.isOverviewActive else { return }
+            // OUR OWN activation, echoed back: focusCurrentColumn calls
+            // NSRunningApplication.activate, macOS notifies, and this handler
+            // used to run a SECOND full reflow for a focus change nigiri had
+            // just made itself - two reflows (and ~40 extra AX reads at ten
+            // windows) per focus keypress. The ring still re-lands.
+            if Date().timeIntervalSince(self.lastSelfInitiatedActivation) < 0.15 {
+                self.updateRing()
+                return
+            }
+            // Read once, use twice: the auto-switch and the focus sync both
+            // wanted the frontmost app's focused window.
+            guard let frontApp = NSWorkspace.shared.frontmostApplication,
+                let focusedElement = AX.focusedWindow(ofPid: frontApp.processIdentifier)
+            else { return }
+            self.autoSwitchToFocusedWindowWorkspace(focusedElement: focusedElement)
+            guard !self.isTransitioningWorkspace else { return }  // the auto-switch may have just started one
+            self.syncFocusIndex(focusedElement: focusedElement)
+            // Right after a workspace switch the strip was JUST laid out where
+            // it belongs, and macOS's focus can transiently land on whichever
+            // app happened to unhide/activate last - scrolling the strip to
+            // chase that opinion glided every window sideways moments after
+            // the vertical rise. Track the ring, but no strip scroll until the
+            // dust settles; any real focus change re-scrolls via later events.
+            guard Date().timeIntervalSince(self.lastWorkspaceSwitch) > 1.0 else {
+                self.updateRing()
+                return
+            }
+            self.reflow()  // clicking/Cmd-Tabbing to a window directly can change focusedIndex outside any of our own hotkeys - keep the strip scrolled to match; reflow() itself keeps the ring in sync every animation step
         }
-        self.applyConfig(config, initial: false)
-    }
-    DistributedNotificationCenter.default().addObserver(
-        // The Carbon constant is not exposed to Swift; this is its value.
-        forName: NSNotification.Name("AppleSelectedInputSourcesChangedNotification"),
-        object: nil, queue: .main
-    ) { _ in
-        MainActor.assumeIsolated { reloadForLayout.run() }
-    }
-
-    // AXObserver only watches PIDs we already know about (registered the
-    // first time collectCurrentAXWindows() sees that app) - a brand-new app
-    // launching has no observer yet, so its windows appearing wouldn't
-    // trigger anything without this. Same idea on quit, in case a whole
-    // process dying doesn't fire per-window destroyed notifications.
-    let requestRelayout = MainActorCallback { self.scheduleRelayout() }
-    NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { _ in
-        // The notification can fire before the app has actually created its
-        // first window in the AX tree - a short delay avoids scanning too
-        // early and missing it (a later relayout would still pick it up on
-        // the next real event, but there's no reason not to get it right away).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            MainActor.assumeIsolated { requestRelayout.run() }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { onAppActivated.run() }
         }
-    }
-    NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { note in
-        // The notification names the dead app - drop its AXObserver (a run
-        // loop source serving a dead connection) instead of leaking one per
-        // quit app for our whole lifetime.
-        let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
-        MainActor.assumeIsolated {
-            if let pid { self.watcher.unwatch(pid: pid) }
-            requestRelayout.run()
+
+        // Plugging in a display, changing resolution, or toggling the Dock's
+        // auto-hide moves the working area under the whole layout - and every
+        // cached answer was measured against the old one. Nothing observed this
+        // before: the layout stayed wrong until an unrelated AX event.
+        let onScreenChange = MainActorCallback {
+            ColumnLayoutEngine.newEpoch()
+            print("[layout] cambio de pantalla: se re-mide todo")
+            self.relayout()
         }
-    }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { onScreenChange.run() }
+        }
 
-    NigiriConfig.writeDefaultIfMissing()
-    let initialConfig = NigiriConfig.load() ?? NigiriConfig()
-    applyConfig(initialConfig, initial: true)
-    // Startup-only, never re-run on reload (niri's semantics: these are
-    // session companions, not supervised services).
-    for command in initialConfig.spawnAtStartup { spawnShell(command) }
-
-    // Live reload (see ConfigWatcher: editors save atomically, which kills
-    // the watched inode, so it re-arms itself).
-    configWatcher.start {
-        if let config = NigiriConfig.load() {
+        // Switching input source moves every latin key to a different physical
+        // position, so the hotkeys registered for the old layout now sit under
+        // the wrong keys. Re-resolve and re-register (a no-op when the config
+        // pins binds-layout).
+        // NOT `?? NigiriConfig()`: a default config is destructive (it clears the
+        // window rules, the workspace names, every wheel/mouse action, and
+        // unregisters all 74 binds without registering any), and this fires on an
+        // event nobody controls - switching keyboard layout while the file is
+        // momentarily unreadable (stow re-linking, an editor between unlink and
+        // rename) would leave the session with no shortcuts at all, and it does
+        // not self-heal: this observer notifies on the layout change, not on the
+        // file coming back. Same policy the config watcher already applies.
+        let reloadForLayout = MainActorCallback {
+            guard let config = NigiriConfig.load() else {
+                print("[config] no se pudo leer al cambiar el layout de teclado - se mantiene la anterior")
+                // Re-apply what is already in force: the only thing this path
+                // actually needs is the keycodes resolved against the new layout.
+                if let current = self.lastAppliedConfig { self.applyConfig(current, initial: false) }
+                return
+            }
             self.applyConfig(config, initial: false)
-        } else {
-            print("[config] reload failed - keeping the previous configuration")
         }
-    }
+        DistributedNotificationCenter.default().addObserver(
+            // The Carbon constant is not exposed to Swift; this is its value.
+            forName: NSNotification.Name("AppleSelectedInputSourcesChangedNotification"),
+            object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { reloadForLayout.run() }
+        }
 
-    // niri's request shapes and the older bare-word ones, one entry point.
-    msgServer.onRequest = { request in self.handleMsgRequest(request) }
-    msgServer.start()
-
-    // ---- Mod+drag (mouse) ----
-
-    let mouseDrag = MouseDragController()
-
-    // A plain press during overview is claimed here (at mouse-down) so the
-    // release can tell a click (select+exit) from a drag (rearrange). See
-    // overviewDragStart/Move/End.
-    mouseDrag.onPlainClick = { point in
-        guard self.isOverviewActive else { return false }
-        self.overviewDragStart(point)
-        return true
-    }
-    mouseDrag.onPlainDrag = { point in self.overviewDragMove(point) }
-    mouseDrag.onScroll = { dx, dy, point in self.overviewPan(dx: dx, dy: dy, at: point) }
-    mouseDrag.onPlainUp = { point in self.overviewDragEnd(point) }
-    mouseDrag.onBegin = { point, _ in
-        guard !self.isTransitioningWorkspace, !self.isOverviewActive, self.modDrag == nil,
-              let (w, floating) = self.managedWindowAt(point),
-              let frame = WindowMover.currentFrame(w.axElement) else { return false }
-        self.modDrag = ModDragState(window: w, isFloating: floating, startFrame: frame, startPoint: point)
-                                // Model focus follows the grab (niri does the same on drag start).
-        if floating {
-            if let idx = self.workspace.floatingWindows.firstIndex(where: { $0 === w }) {
-                self.workspace.isFloatingActive = true
-                self.workspace.focus(floating: idx)
-            }
-        } else if let ci = self.workspace.columns.firstIndex(where: { $0.windows.contains { $0 === w } }) {
-            self.workspace.isFloatingActive = false
-            self.workspace.focus(column: ci)
-            if let ri = self.workspace.columns[ci].windows.firstIndex(where: { $0 === w }) {
-                self.workspace.columns[ci].focus(row: ri)
+        // AXObserver only watches PIDs we already know about (registered the
+        // first time collectCurrentAXWindows() sees that app) - a brand-new app
+        // launching has no observer yet, so its windows appearing wouldn't
+        // trigger anything without this. Same idea on quit, in case a whole
+        // process dying doesn't fire per-window destroyed notifications.
+        let requestRelayout = MainActorCallback { self.scheduleRelayout() }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
+        ) { _ in
+            // The notification can fire before the app has actually created its
+            // first window in the AX tree - a short delay avoids scanning too
+            // early and missing it (a later relayout would still pick it up on
+            // the next real event, but there's no reason not to get it right away).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                MainActor.assumeIsolated { requestRelayout.run() }
             }
         }
-        // Our own per-event writes must not feed the relayout loop.
-        self.watcher.beginApplyingLayout()
-        return true
-    }
-    mouseDrag.onMove = { point in
-        guard let drag = self.modDrag else { return }
-        let w = drag.window
-        let dx = point.x - drag.startPoint.x
-        let dy = point.y - drag.startPoint.y
-        if mouseDrag.phase == .move {
-            try? WindowMover.setPosition(w.axElement, to: CGPoint(x: drag.startFrame.origin.x + dx, y: drag.startFrame.origin.y + dy))
-            // niri's insert hint: paint where this window would land.
-            if !drag.isFloating, let preview = self.insertPreview(at: point) {
-                self.pendingDrop = preview.position
-                self.insertHint.show(preview.hint)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            // The notification names the dead app - drop its AXObserver (a run
+            // loop source serving a dead connection) instead of leaking one per
+            // quit app for our whole lifetime.
+            let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                .processIdentifier
+            MainActor.assumeIsolated {
+                if let pid { self.watcher.unwatch(pid: pid) }
+                requestRelayout.run()
             }
-        } else {
-            try? WindowMover.setFrame(w.axElement, to: CGRect(
-                x: drag.startFrame.origin.x, y: drag.startFrame.origin.y,
-                width: max(50, drag.startFrame.width + dx), height: max(50, drag.startFrame.height + dy)))
         }
-    }
-    mouseDrag.onEnd = { point in
-        self.insertHint.hide()
-        defer { self.pendingDrop = nil }
-        guard let drag = self.modDrag else { return }
-        let w = drag.window
-        self.modDrag = nil
-        self.watcher.endApplyingLayout()
-        if drag.isFloating {
-            // Floating: wherever the drag left it is where it lives.
-            self.updateRingImmediate()
-            print("mod-drag: floating \(mouseDrag.phase == .move ? "moved" : "resized") (\(w.title))")
-            return
-        }
-        if mouseDrag.phase == .move {
-            // niri's interactive move: the WINDOW lands where the hint said -
-            // a new column between two, or a slot inside a column's stack.
-            // The settle reflow snaps the ghost into place.
-            let position = self.pendingDrop ?? self.insertPreview(at: point)?.position
-            if let position, self.dropWindow(w, at: position) {
-                print("mod-drag: \(position)")
+
+        NigiriConfig.writeDefaultIfMissing()
+        let initialConfig = NigiriConfig.load() ?? NigiriConfig()
+        applyConfig(initialConfig, initial: true)
+        // Startup-only, never re-run on reload (niri's semantics: these are
+        // session companions, not supervised services).
+        for command in initialConfig.spawnAtStartup { spawnShell(command) }
+
+        // Live reload (see ConfigWatcher: editors save atomically, which kills
+        // the watched inode, so it re-arms itself).
+        configWatcher.start {
+            if let config = NigiriConfig.load() {
+                self.applyConfig(config, initial: false)
+            } else {
+                print("[config] reload failed - keeping the previous configuration")
             }
-            self.reflow()
-            self.focusCurrentColumn()
-        } else {
-            // Resize drop: the dragged size becomes the model's truth -
-            // width as the column's proportion (clamped like every other
-            // width writer), height as a manual stack height.
-            if let current = WindowMover.currentFrame(w.axElement),
-               let columnIndex = self.workspace.columns.firstIndex(where: { $0.windows.contains { $0 === w } }) {
-                let column = self.workspace.columns[columnIndex]
-                let usableWidth = self.usableScreen().usableWidth
-                if usableWidth > 0 {
-                    column.widthProportion = self.clampedProportion(
-                        ColumnLayoutEngine.proportion(forWidth: current.width, usableWidth: usableWidth), for: column)
-                    column.presetWidthIndex = nil
+        }
+
+        // niri's request shapes and the older bare-word ones, one entry point.
+        msgServer.onRequest = { request in self.handleMsgRequest(request) }
+        msgServer.start()
+
+        // ---- Mod+drag (mouse) ----
+
+        let mouseDrag = MouseDragController()
+
+        // A plain press during overview is claimed here (at mouse-down) so the
+        // release can tell a click (select+exit) from a drag (rearrange). See
+        // overviewDragStart/Move/End.
+        mouseDrag.onPlainClick = { point in
+            guard self.isOverviewActive else { return false }
+            self.overviewDragStart(point)
+            return true
+        }
+        mouseDrag.onPlainDrag = { point in self.overviewDragMove(point) }
+        mouseDrag.onScroll = { dx, dy, point in self.overviewPan(dx: dx, dy: dy, at: point) }
+        mouseDrag.onPlainUp = { point in self.overviewDragEnd(point) }
+        mouseDrag.onBegin = { point, _ in
+            guard !self.isTransitioningWorkspace, !self.isOverviewActive, self.modDrag == nil,
+                let (w, floating) = self.managedWindowAt(point),
+                let frame = WindowMover.currentFrame(w.axElement)
+            else { return false }
+            self.modDrag = ModDragState(window: w, isFloating: floating, startFrame: frame, startPoint: point)
+            // Model focus follows the grab (niri does the same on drag start).
+            if floating {
+                if let idx = self.workspace.floatingWindows.firstIndex(where: { $0 === w }) {
+                    self.workspace.isFloatingActive = true
+                    self.workspace.focus(floating: idx)
                 }
-                if column.windows.count > 1, !column.isTabbed {
-                    w.manualHeightPx = current.height
-                    column.cachedHeights = nil
+            } else if let ci = self.workspace.columns.firstIndex(where: { $0.windows.contains { $0 === w } })
+            {
+                self.workspace.isFloatingActive = false
+                self.workspace.focus(column: ci)
+                if let ri = self.workspace.columns[ci].windows.firstIndex(where: { $0 === w }) {
+                    self.workspace.columns[ci].focus(row: ri)
                 }
-                print("mod-drag: resized to \(Int(current.width))px (\(String(format: "%.0f%%", column.widthProportion * 100)))")
             }
-            self.reflow()
+            // Our own per-event writes must not feed the relayout loop.
+            self.watcher.beginApplyingLayout()
+            return true
         }
-    }
-    // Mod+wheel (mouse) -> the config-mapped action (read live).
-    mouseDrag.onWheel = { key in
-        guard let action = self.wheelActions[key], !action.isEmpty else {
-            // Logged like the button path: a wheel bind that never fires is
-            // otherwise indistinguishable from a wheel that reports nothing.
-            debugLog("[mouse] rueda \(key) sin bind")
-            return
+        mouseDrag.onMove = { point in
+            guard let drag = self.modDrag else { return }
+            let w = drag.window
+            let dx = point.x - drag.startPoint.x
+            let dy = point.y - drag.startPoint.y
+            if mouseDrag.phase == .move {
+                try? WindowMover.setPosition(
+                    w.axElement,
+                    to: CGPoint(x: drag.startFrame.origin.x + dx, y: drag.startFrame.origin.y + dy))
+                // niri's insert hint: paint where this window would land.
+                if !drag.isFloating, let preview = self.insertPreview(at: point) {
+                    self.pendingDrop = preview.position
+                    self.insertHint.show(preview.hint)
+                }
+            } else {
+                try? WindowMover.setFrame(
+                    w.axElement,
+                    to: CGRect(
+                        x: drag.startFrame.origin.x, y: drag.startFrame.origin.y,
+                        width: max(50, drag.startFrame.width + dx),
+                        height: max(50, drag.startFrame.height + dy)))
+            }
         }
-        self.performAction(action)
-    }
-    // Mouse buttons bound in the config (niri's Mod+MouseMiddle and
-    // friends). Returns whether the press was claimed, so an unbound button
-    // still reaches the app under the cursor.
-    mouseDrag.onButton = { key in
-        guard let action = self.mouseActions[key], !action.isEmpty else {
-            // Logged unbound too: a mouse whose side buttons report a
-            // different number than expected is otherwise indistinguishable
-            // from a bind that never fired.
-            debugLog("[mouse] \(key) sin bind")
-            return false
+        mouseDrag.onEnd = { point in
+            self.insertHint.hide()
+            defer { self.pendingDrop = nil }
+            guard let drag = self.modDrag else { return }
+            let w = drag.window
+            self.modDrag = nil
+            self.watcher.endApplyingLayout()
+            if drag.isFloating {
+                // Floating: wherever the drag left it is where it lives.
+                self.updateRingImmediate()
+                print("mod-drag: floating \(mouseDrag.phase == .move ? "moved" : "resized") (\(w.title))")
+                return
+            }
+            if mouseDrag.phase == .move {
+                // niri's interactive move: the WINDOW lands where the hint said -
+                // a new column between two, or a slot inside a column's stack.
+                // The settle reflow snaps the ghost into place.
+                let position = self.pendingDrop ?? self.insertPreview(at: point)?.position
+                if let position, self.dropWindow(w, at: position) {
+                    print("mod-drag: \(position)")
+                }
+                self.reflow()
+                self.focusCurrentColumn()
+            } else {
+                // Resize drop: the dragged size becomes the model's truth -
+                // width as the column's proportion (clamped like every other
+                // width writer), height as a manual stack height.
+                if let current = WindowMover.currentFrame(w.axElement),
+                    let columnIndex = self.workspace.columns.firstIndex(where: {
+                        $0.windows.contains { $0 === w }
+                    })
+                {
+                    let column = self.workspace.columns[columnIndex]
+                    let usableWidth = self.usableScreen().usableWidth
+                    if usableWidth > 0 {
+                        column.widthProportion = self.clampedProportion(
+                            ColumnLayoutEngine.proportion(forWidth: current.width, usableWidth: usableWidth),
+                            for: column)
+                        column.presetWidthIndex = nil
+                    }
+                    if column.windows.count > 1, !column.isTabbed {
+                        w.manualHeightPx = current.height
+                        column.cachedHeights = nil
+                    }
+                    print(
+                        "mod-drag: resized to \(Int(current.width))px (\(String(format: "%.0f%%", column.widthProportion * 100)))"
+                    )
+                }
+                self.reflow()
+            }
         }
-        print("[mouse] \(key) -> \(action)")
-        self.performAction(action)
-        return true
-    }
-    mouseDrag.start()
+        // Mod+wheel (mouse) -> the config-mapped action (read live).
+        mouseDrag.onWheel = { key in
+            guard let action = self.wheelActions[key], !action.isEmpty else {
+                // Logged like the button path: a wheel bind that never fires is
+                // otherwise indistinguishable from a wheel that reports nothing.
+                debugLog("[mouse] rueda \(key) sin bind")
+                return
+            }
+            self.performAction(action)
+        }
+        // Mouse buttons bound in the config (niri's Mod+MouseMiddle and
+        // friends). Returns whether the press was claimed, so an unbound button
+        // still reaches the app under the cursor.
+        mouseDrag.onButton = { key in
+            guard let action = self.mouseActions[key], !action.isEmpty else {
+                // Logged unbound too: a mouse whose side buttons report a
+                // different number than expected is otherwise indistinguishable
+                // from a bind that never fired.
+                debugLog("[mouse] \(key) sin bind")
+                return false
+            }
+            print("[mouse] \(key) -> \(action)")
+            self.performAction(action)
+            return true
+        }
+        mouseDrag.start()
 
-    // Three-finger swipes -> the config-mapped actions (read live, so a
-    // reload re-maps them without restarting the recognizer).
-    trackpadGestures.onSwipe = { direction, fingers, isMouse in
-        // A Magic Mouse is a multitouch surface too, but with room for one
-        // or two fingers - its swipes are their own bindings, empty by
-        // default (one-finger vertical on that surface IS scrolling).
-        let table: [SwipeDirection: String]
-        if isMouse {
-            table = fingers == 1 ? self.gestureMouseOne : self.gestureMouseTwo
-        } else if fingers == 4 {
-            table = [.left: self.gestureFourLeft, .right: self.gestureFourRight,
-                     .up: self.gestureFourUp, .down: self.gestureFourDown]
+        // Three-finger swipes -> the config-mapped actions (read live, so a
+        // reload re-maps them without restarting the recognizer).
+        trackpadGestures.onSwipe = { direction, fingers, isMouse in
+            // A Magic Mouse is a multitouch surface too, but with room for one
+            // or two fingers - its swipes are their own bindings, empty by
+            // default (one-finger vertical on that surface IS scrolling).
+            let table: [SwipeDirection: String]
+            if isMouse {
+                table = fingers == 1 ? self.gestureMouseOne : self.gestureMouseTwo
+            } else if fingers == 4 {
+                table = [
+                    .left: self.gestureFourLeft, .right: self.gestureFourRight,
+                    .up: self.gestureFourUp, .down: self.gestureFourDown,
+                ]
+            } else {
+                table = [
+                    .left: self.gestureSwipeLeft, .right: self.gestureSwipeRight,
+                    .up: self.gestureSwipeUp, .down: self.gestureSwipeDown,
+                ]
+            }
+            if let action = table[direction], !action.isEmpty { self.performAction(action) }
+        }
+        trackpadGestures.start()
+
+        if !listener.start() {
+            print(
+                "warning: failed to install the Carbon hotkey event handler - tiling will work, but hotkeys won't."
+            )
         } else {
-            table = [.left: self.gestureSwipeLeft, .right: self.gestureSwipeRight,
-                     .up: self.gestureSwipeUp, .down: self.gestureSwipeDown]
+            print(
+                "hotkeys active: \(initialConfig.binds.count) binds from \(NigiriConfig.path) (Cmd+Opt+/ = overlay)"
+            )
         }
-        if let action = table[direction], !action.isEmpty { self.performAction(action) }
-    }
-    trackpadGestures.start()
 
-    if !listener.start() {
-        print("warning: failed to install the Carbon hotkey event handler - tiling will work, but hotkeys won't.")
-    } else {
-        print("hotkeys active: \(initialConfig.binds.count) binds from \(NigiriConfig.path) (Cmd+Opt+/ = overlay)")
-    }
+        // niri-style control channel (niri's is `niri msg action ...` over its
+        // IPC socket): a FIFO other processes can write action lines into -
+        // `echo "focus-workspace 2" > /tmp/nigiri-cmd`. Every action goes
+        // through the exact same functions the hotkeys call, so anything
+        // driven from here exercises the real paths. Also the only way to
+        // drive nigiri programmatically (tests, scripts, a future `nigiri msg`
+        // subcommand) without simulating keyboard input, which this project
+        // never does.
+        commandPipe.start { line in
+            // Same router as the config binds: one vocabulary, two input
+            // surfaces.
+            self.performAction(line)
+        }
 
-    // niri-style control channel (niri's is `niri msg action ...` over its
-    // IPC socket): a FIFO other processes can write action lines into -
-    // `echo "focus-workspace 2" > /tmp/nigiri-cmd`. Every action goes
-    // through the exact same functions the hotkeys call, so anything
-    // driven from here exercises the real paths. Also the only way to
-    // drive nigiri programmatically (tests, scripts, a future `nigiri msg`
-    // subcommand) without simulating keyboard input, which this project
-    // never does.
-    commandPipe.start { line in
-        // Same router as the config binds: one vocabulary, two input
-        // surfaces.
-        self.performAction(line)
-    }
+        // DispatchSource, not signal(2) handlers: restoring windows needs AX
+        // calls, which are nowhere near async-signal-safe - the source delivers
+        // on the main queue, in normal execution context. SIG_IGN is required
+        // for the source to receive the signal at all.
+        signal(SIGINT, SIG_IGN)
+        signal(SIGTERM, SIG_IGN)
+        let terminationSignalSources = [SIGINT, SIGTERM].map { sig in
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler {
+                MainActor.assumeIsolated {
+                    self.restoreStashedWindows()
+                    // SIGINT is a person pressing Ctrl+C: exit 0, stay quit (same as
+                    // the `quit` action). SIGTERM is the SYSTEM killing us - macOS
+                    // terminates an app whose Screen Recording / Accessibility
+                    // permission just changed, and that arrived as a clean exit 0,
+                    // so the KeepAlive-on-failure agent stayed dead: nigiri simply
+                    // vanished the moment its checkbox was ticked, tiling and all
+                    // (hit live). A distinct non-zero code makes launchd bring it
+                    // straight back. launchd's own bootout also sends SIGTERM, but
+                    // that REMOVES the job first, so there is nothing to respawn.
+                    exit(sig == SIGTERM ? 75 : 0)
+                }
+            }
+            source.resume()
+            return source
+        }
+        _ = terminationSignalSources
 
-    // DispatchSource, not signal(2) handlers: restoring windows needs AX
-    // calls, which are nowhere near async-signal-safe - the source delivers
-    // on the main queue, in normal execution context. SIG_IGN is required
-    // for the source to receive the signal at all.
-    signal(SIGINT, SIG_IGN)
-    signal(SIGTERM, SIG_IGN)
-    let terminationSignalSources = [SIGINT, SIGTERM].map { sig in
-        let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-        source.setEventHandler { MainActor.assumeIsolated {
-            self.restoreStashedWindows()
-            // SIGINT is a person pressing Ctrl+C: exit 0, stay quit (same as
-            // the `quit` action). SIGTERM is the SYSTEM killing us - macOS
-            // terminates an app whose Screen Recording / Accessibility
-            // permission just changed, and that arrived as a clean exit 0,
-            // so the KeepAlive-on-failure agent stayed dead: nigiri simply
-            // vanished the moment its checkbox was ticked, tiling and all
-            // (hit live). A distinct non-zero code makes launchd bring it
-            // straight back. launchd's own bootout also sends SIGTERM, but
-            // that REMOVES the job first, so there is nothing to respawn.
-            exit(sig == SIGTERM ? 75 : 0)
-        } }
-        source.resume()
-        return source
-    }
-    _ = terminationSignalSources
-
-    print("nigiri tile: watching \(tileAll ? "all apps" : watchedAppNames.joined(separator: ", ")). Ctrl+C to quit.")
-    relayout()
-    // Warm the overview's backdrop, so even the FIRST overview of the session
-    // opens onto the desktop instead of the flat colour. Deferred: the Screen
-    // Recording grant is checked inside, and at this point in start() the
-    // permission preflight may not have run yet.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refreshDesktopBackdrop() }
-    runResidentApp()
+        print(
+            "nigiri tile: watching \(tileAll ? "all apps" : watchedAppNames.joined(separator: ", ")). Ctrl+C to quit."
+        )
+        relayout()
+        // Warm the overview's backdrop, so even the FIRST overview of the session
+        // opens onto the desktop instead of the flat colour. Deferred: the Screen
+        // Recording grant is checked inside, and at this point in start() the
+        // permission preflight may not have run yet.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.refreshDesktopBackdrop() }
+        runResidentApp()
     }
 }
 

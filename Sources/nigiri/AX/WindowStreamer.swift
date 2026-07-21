@@ -55,26 +55,34 @@ final class WindowStreamer {
         let onFrame: @MainActor (UInt64, IOSurface, CVPixelBuffer) -> Void
         let onStop: @MainActor (UInt64, String) -> Void
 
-        init(windowID: UInt64,
-             onFrame: @escaping @MainActor (UInt64, IOSurface, CVPixelBuffer) -> Void,
-             onStop: @escaping @MainActor (UInt64, String) -> Void) {
+        init(
+            windowID: UInt64,
+            onFrame: @escaping @MainActor (UInt64, IOSurface, CVPixelBuffer) -> Void,
+            onStop: @escaping @MainActor (UInt64, String) -> Void
+        ) {
             self.windowID = windowID
             self.onFrame = onFrame
             self.onStop = onStop
         }
 
-        func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        func stream(
+            _ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+            of type: SCStreamOutputType
+        ) {
             guard type == .screen else { return }
             // Only complete frames carry pixels. Without this check, `.idle`
             // notices look like frames: measured 70 real surfaces out of 174
             // callbacks on a busy window, 100% once filtered.
-            if let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-               let raw = attachments.first?[.status] as? Int,
-               let status = SCFrameStatus(rawValue: raw), status != .complete {
+            if let attachments = CMSampleBufferGetSampleAttachmentsArray(
+                sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+                let raw = attachments.first?[.status] as? Int,
+                let status = SCFrameStatus(rawValue: raw), status != .complete
+            {
                 return
             }
             guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
-                  let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer) else { return }
+                let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer)
+            else { return }
             let surface = unsafeBitCast(surfaceRef.takeUnretainedValue(), to: IOSurface.self)
             let id = windowID
             let handler = onFrame
@@ -128,19 +136,21 @@ final class WindowStreamer {
             config.pixelFormat = kCVPixelFormatType_32BGRA
             config.ignoreShadowsSingleWindow = true
             config.ignoreGlobalClipSingleWindow = true
-            let sink = Sink(windowID: entry.id,
-                            onFrame: { [weak self] id, surface, buffer in
-                                guard let self else { return }
-                                self.retained[id] = buffer
-                                self.onFrame?(id, surface, buffer)
-                            },
-                            onStop: { [weak self] id, message in
-                                print("[stream] \(id) se detuvo: \(message)")
-                                self?.stop(id)
-                                self?.onStopped?(id)
-                            })
-            let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: entry.window),
-                                  configuration: config, delegate: sink)
+            let sink = Sink(
+                windowID: entry.id,
+                onFrame: { [weak self] id, surface, buffer in
+                    guard let self else { return }
+                    self.retained[id] = buffer
+                    self.onFrame?(id, surface, buffer)
+                },
+                onStop: { [weak self] id, message in
+                    print("[stream] \(id) se detuvo: \(message)")
+                    self?.stop(id)
+                    self?.onStopped?(id)
+                })
+            let stream = SCStream(
+                filter: SCContentFilter(desktopIndependentWindow: entry.window),
+                configuration: config, delegate: sink)
             do {
                 try stream.addStreamOutput(sink, type: .screen, sampleHandlerQueue: frameQueue)
             } catch {

@@ -15,7 +15,8 @@ final class OverviewChrome {
                 label.stringValue = row.label
                 label.textColor = row.active ? .white : NSColor(calibratedWhite: 0.8, alpha: 1)
             }
-            chip.contentView?.layer?.backgroundColor = (row.active
+            chip.contentView?.layer?.backgroundColor =
+                (row.active
                 ? NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 0.95)
                 : NSColor(calibratedWhite: 0.15, alpha: 0.95)).cgColor
             let frame = CGRect(x: 8, y: row.y, width: 110, height: 26)

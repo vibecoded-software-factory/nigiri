@@ -33,18 +33,20 @@ final class ConfigWatcher {
         }
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd, eventMask: [.write, .delete, .rename, .extend], queue: .main)
-        source.setEventHandler { MainActor.assumeIsolated {
-            let event = source.data
-            self.onChange?()
-            if event.contains(.delete) || event.contains(.rename) {
-                // The inode this source watches is gone: close it and watch
-                // the new file at the same path.
-                source.cancel()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    MainActor.assumeIsolated { self.arm() }
+        source.setEventHandler {
+            MainActor.assumeIsolated {
+                let event = source.data
+                self.onChange?()
+                if event.contains(.delete) || event.contains(.rename) {
+                    // The inode this source watches is gone: close it and watch
+                    // the new file at the same path.
+                    source.cancel()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        MainActor.assumeIsolated { self.arm() }
+                    }
                 }
             }
-        } }
+        }
         source.setCancelHandler { close(fd) }
         source.resume()
         self.source = source

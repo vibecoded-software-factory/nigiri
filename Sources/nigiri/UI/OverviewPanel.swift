@@ -9,7 +9,7 @@ import AppKit
 final class OverviewPanel {
     struct Entry {
         let title: String
-        let box: CGRect          // AX-space rect the thumbnail occupies
+        let box: CGRect  // AX-space rect the thumbnail occupies
         // Whose window this card shows. Frames are addressed by id, never by
         // position: the slot index is renumbered by every rebuild, which is
         // how a capture in flight ended up painted into another card.
@@ -93,9 +93,10 @@ final class OverviewPanel {
         var selection: [(window: ManagedWindow, wsIndex: Int)] = []
         var requests: [(pid: pid_t, title: String, frame: CGRect)] = []
         for (rowIndex, input) in inputs.enumerated() {
-            let canvas = CGRect(x: originX,
-                                y: activeY + CGFloat(rowIndex - activeRow) * pitch,
-                                width: wsSize.width, height: wsSize.height)
+            let canvas = CGRect(
+                x: originX,
+                y: activeY + CGFloat(rowIndex - activeRow) * pitch,
+                width: wsSize.width, height: wsSize.height)
             // niri drops a workspace whose rectangle does not intersect the
             // output at all (workspaces_with_render_geo's filter).
             guard canvas.intersects(screenFrame) else { continue }
@@ -103,23 +104,29 @@ final class OverviewPanel {
             // scaled - not repacked. A window at x = 2 screens along the strip
             // lands 2 scaled screens to the right of the canvas, i.e. off it.
             func project(_ f: CGRect) -> CGRect {
-                CGRect(x: canvas.minX + (f.minX - screenFrame.minX) * scale,
-                       y: canvas.minY + (f.minY - screenFrame.minY) * scale,
-                       width: f.width * scale, height: f.height * scale)
+                CGRect(
+                    x: canvas.minX + (f.minX - screenFrame.minX) * scale,
+                    y: canvas.minY + (f.minY - screenFrame.minY) * scale,
+                    width: f.width * scale, height: f.height * scale)
             }
             var entries: [Entry] = []
             for item in input.windows {
-                entries.append(Entry(title: item.window.title, box: project(item.layoutFrame),
-                                     windowID: item.window.id))
+                entries.append(
+                    Entry(
+                        title: item.window.title, box: project(item.layoutFrame),
+                        windowID: item.window.id))
                 requests.append((item.window.pid, item.window.title, item.captureFrame))
                 selection.append((item.window, input.wsIndex))
             }
             // Horizontally the band is the whole screen (that bleed is the
             // point); vertically it is exactly the workspace's own rectangle.
-            let band = CGRect(x: screenFrame.minX, y: canvas.minY,
-                              width: screenFrame.width, height: canvas.height)
-            rows.append(Row(wsIndex: input.wsIndex, active: input.active, canvas: canvas,
-                            band: band, cameraX: input.viewOffset * scale, entries: entries))
+            let band = CGRect(
+                x: screenFrame.minX, y: canvas.minY,
+                width: screenFrame.width, height: canvas.height)
+            rows.append(
+                Row(
+                    wsIndex: input.wsIndex, active: input.active, canvas: canvas,
+                    band: band, cameraX: input.viewOffset * scale, entries: entries))
         }
         return ComputedRows(rows: rows, selection: selection, requests: requests)
     }
@@ -229,21 +236,25 @@ final class OverviewPanel {
 
         selectionView.wantsLayer = true
         selectionView.layer?.borderWidth = 3
-        selectionView.layer?.borderColor = NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1).cgColor
+        selectionView.layer?.borderColor =
+            NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1).cgColor
         selectionView.layer?.cornerRadius = 10
         selectionView.layer?.backgroundColor = NSColor.clear.cgColor
         // A soft glow so the ring reads over busy thumbnails, mirroring the
         // real focus ring's shadow.
-        selectionView.layer?.shadowColor = NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1).cgColor
+        selectionView.layer?.shadowColor =
+            NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1).cgColor
         selectionView.layer?.shadowOpacity = 0.9
         selectionView.layer?.shadowRadius = 10
         selectionView.layer?.shadowOffset = .zero
         selectionView.isHidden = true
 
         dropIndicator.wantsLayer = true
-        dropIndicator.layer?.backgroundColor = NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 0.85).cgColor
+        dropIndicator.layer?.backgroundColor =
+            NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 0.85).cgColor
         dropIndicator.layer?.cornerRadius = 7
-        dropIndicator.layer?.shadowColor = NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1).cgColor
+        dropIndicator.layer?.shadowColor =
+            NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1).cgColor
         dropIndicator.layer?.shadowOpacity = 1
         dropIndicator.layer?.shadowRadius = 6
         dropIndicator.layer?.shadowOffset = .zero
@@ -298,10 +309,12 @@ final class OverviewPanel {
         }
     }
 
-    func show(screenFrame: CGRect,
-              rows: [Row],
-              animation: AnimationCurve = .off,
-              cameraAnimation: AnimationCurve = .off) {
+    func show(
+        screenFrame: CGRect,
+        rows: [Row],
+        animation: AnimationCurve = .off,
+        cameraAnimation: AnimationCurve = .off
+    ) {
         guard let content = window.contentView else { return }
         // Every in-overview move rebuilds the panel through here; only the
         // transition from NOT being on screen is an opening.
@@ -349,9 +362,10 @@ final class OverviewPanel {
         // Converts an AX-space rect into this content view's (bottom-left)
         // coordinates.
         func viewRect(_ axRect: CGRect) -> CGRect {
-            CGRect(x: axRect.origin.x - screenFrame.minX,
-                   y: screenFrame.maxY - axRect.maxY,
-                   width: axRect.width, height: axRect.height)
+            CGRect(
+                x: axRect.origin.x - screenFrame.minX,
+                y: screenFrame.maxY - axRect.maxY,
+                width: axRect.width, height: axRect.height)
         }
 
         for row in rows {
@@ -373,8 +387,9 @@ final class OverviewPanel {
             // With no shadowPath, Core Animation re-derives the shadow from
             // the layer's alpha channel every frame - offscreen work on a
             // half-screen layer, on every frame of every pan.
-            plate.layer?.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: plate.frame.size),
-                                             cornerWidth: 12, cornerHeight: 12, transform: nil)
+            plate.layer?.shadowPath = CGPath(
+                roundedRect: CGRect(origin: .zero, size: plate.frame.size),
+                cornerWidth: 12, cornerHeight: 12, transform: nil)
             content.addSubview(plate)
             plateViews.append(plate)
 
@@ -397,7 +412,8 @@ final class OverviewPanel {
             strips[row.wsIndex] = strip
             let firstEntry = entryBoxes.count
             if let previous = previousCamera[row.wsIndex], abs(previous - row.cameraX) > 0.5,
-               let slide = cameraAnimation.coreAnimation(keyPath: "transform") {
+                let slide = cameraAnimation.coreAnimation(keyPath: "transform")
+            {
                 _ = Self.cameraKey
                 // Start where the camera WAS (content further right by however
                 // much the camera advanced) and travel to where it is now.
@@ -427,7 +443,10 @@ final class OverviewPanel {
                 // shown in a half-height STACKED slot - never letterboxes into
                 // big grey bars; it just crops.
                 let titleHeight: CGFloat = 18
-                let thumb = NSView(frame: CGRect(x: 4, y: titleHeight, width: card.bounds.width - 8, height: card.bounds.height - titleHeight - 4))
+                let thumb = NSView(
+                    frame: CGRect(
+                        x: 4, y: titleHeight, width: card.bounds.width - 8,
+                        height: card.bounds.height - titleHeight - 4))
                 thumb.wantsLayer = true
                 thumb.layer?.contentsGravity = .resizeAspectFill
                 thumb.layer?.masksToBounds = true
@@ -462,9 +481,13 @@ final class OverviewPanel {
         content.addSubview(selectionView)
         content.addSubview(dropIndicator)
         for row in rows {
-            debugLog("[overview-geo] ws=\(row.wsIndex) canvas=\(Int(row.canvas.minX)),\(Int(row.canvas.minY)) \(Int(row.canvas.width))x\(Int(row.canvas.height)) camera=\(Int(row.cameraX))")
+            debugLog(
+                "[overview-geo] ws=\(row.wsIndex) canvas=\(Int(row.canvas.minX)),\(Int(row.canvas.minY)) \(Int(row.canvas.width))x\(Int(row.canvas.height)) camera=\(Int(row.cameraX))"
+            )
             for e in row.entries {
-                debugLog("[overview-geo]   card \(Int(e.box.minX)),\(Int(e.box.minY)) \(Int(e.box.width))x\(Int(e.box.height)) \(e.title.prefix(28))")
+                debugLog(
+                    "[overview-geo]   card \(Int(e.box.minX)),\(Int(e.box.minY)) \(Int(e.box.width))x\(Int(e.box.height)) \(e.title.prefix(28))"
+                )
             }
         }
         prepareEntrance()
@@ -572,7 +595,7 @@ final class OverviewPanel {
             content.addSubview(card)
         }
         card.layer?.zPosition = 100
-        card.alphaValue = 0.75   // niri's INTERACTIVE_MOVE_ALPHA
+        card.alphaValue = 0.75  // niri's INTERACTIVE_MOVE_ALPHA
         card.layer?.shadowColor = NSColor.black.cgColor
         card.layer?.shadowOpacity = 0.5
         card.layer?.shadowRadius = 14
@@ -590,8 +613,10 @@ final class OverviewPanel {
         let card = cardViews[i]
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        card.setFrameOrigin(CGPoint(x: p.x - card.frame.width / 2,
-                                    y: p.y - card.frame.height / 2))
+        card.setFrameOrigin(
+            CGPoint(
+                x: p.x - card.frame.width / 2,
+                y: p.y - card.frame.height / 2))
         CATransaction.commit()
     }
 
@@ -618,8 +643,9 @@ final class OverviewPanel {
         // A camera position only means something within one overview session.
         previousCamera = [:]
         guard let layer = window.contentView?.layer,
-              let transform = animation.coreAnimation(keyPath: "transform"),
-              let fade = animation.coreAnimation(keyPath: "opacity") else {
+            let transform = animation.coreAnimation(keyPath: "transform"),
+            let fade = animation.coreAnimation(keyPath: "opacity")
+        else {
             closing = false
             window.orderOut(nil)
             return

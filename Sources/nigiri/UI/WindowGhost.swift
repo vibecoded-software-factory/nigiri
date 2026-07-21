@@ -39,10 +39,13 @@ final class WindowGhost {
         spawn(contents: contents, retaining: buffer, axFrame: axFrame, curve: curve)
     }
 
-    private func spawn(contents: Any?, retaining buffer: CVPixelBuffer?, axFrame: CGRect, curve: AnimationCurve) {
+    private func spawn(
+        contents: Any?, retaining buffer: CVPixelBuffer?, axFrame: CGRect, curve: AnimationCurve
+    ) {
         guard axFrame.width > 2, axFrame.height > 2 else { return }
-        let window = NSWindow(contentRect: ScreenGeometry.axFrameToAppKit(axFrame),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(
+            contentRect: ScreenGeometry.axFrameToAppKit(axFrame),
+            styleMask: [.borderless], backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -75,8 +78,9 @@ final class WindowGhost {
         // close (the one without a custom shader) is a scale-down plus alpha,
         // and that is the part of it that ports.
         guard let layer = view.layer,
-              let scale = curve.coreAnimation(keyPath: "transform"),
-              let fade = curve.coreAnimation(keyPath: "opacity") else {
+            let scale = curve.coreAnimation(keyPath: "transform"),
+            let fade = curve.coreAnimation(keyPath: "opacity")
+        else {
             finish(window)
             return
         }

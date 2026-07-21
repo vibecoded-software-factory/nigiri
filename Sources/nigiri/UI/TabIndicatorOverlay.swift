@@ -20,8 +20,10 @@ final class TabIndicators {
     static let cornerRadius: CGFloat = 8
     static let lengthProportion: CGFloat = 0.5
 
-    private var activeColor: NSColor = NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
-    private var inactiveColor: NSColor = NSColor(calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
+    private var activeColor: NSColor = NSColor(
+        calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
+    private var inactiveColor: NSColor = NSColor(
+        calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
 
     // layout { tab-indicator { active-gradient / inactive-color } }
     func applyStyle(active: NSColor, inactive: NSColor) {

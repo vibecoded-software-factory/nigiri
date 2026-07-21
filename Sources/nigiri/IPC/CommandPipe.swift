@@ -32,13 +32,15 @@ final class CommandPipe {
             return false
         }
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
-        source.setEventHandler { MainActor.assumeIsolated {
-            var chunk = [UInt8](repeating: 0, count: 4096)
-            let n = read(fd, &chunk, 4096)
-            guard n > 0 else { return }
-            self.pending.append(contentsOf: chunk[0..<n])
-            for line in Self.takeLines(from: &self.pending) { onLine(line) }
-        } }
+        source.setEventHandler {
+            MainActor.assumeIsolated {
+                var chunk = [UInt8](repeating: 0, count: 4096)
+                let n = read(fd, &chunk, 4096)
+                guard n > 0 else { return }
+                self.pending.append(contentsOf: chunk[0..<n])
+                for line in Self.takeLines(from: &self.pending) { onLine(line) }
+            }
+        }
         source.resume()
         self.source = source
         return true

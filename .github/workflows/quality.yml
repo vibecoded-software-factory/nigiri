@@ -1,0 +1,51 @@
+name: quality
+
+# Two gates that are cheap to run and expensive to forget: the formatter, and
+# a floor under how much of the pure logic the selftest actually exercises.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  format:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift-format
+        run: swift format lint --strict --recursive Sources/
+
+  coverage:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only Layout/ and Config/ are measured, and that is the point: they are
+      # the pure logic, the part a test CAN cover. Everything else drives other
+      # processes through the Accessibility API or draws on a real screen, and
+      # is verified live instead - counting it here would only produce a number
+      # that goes down for honest reasons.
+      - name: Build instrumented and run the selftest
+        run: |
+          set -euo pipefail
+          swift build -Xswiftc -profile-generate -Xswiftc -profile-coverage-mapping
+          LLVM_PROFILE_FILE=/tmp/nigiri.profraw .build/debug/nigiri selftest
+          xcrun llvm-profdata merge -sparse /tmp/nigiri.profraw -o /tmp/nigiri.profdata
+
+      - name: Enforce the floor
+        env:
+          FLOOR: "70"
+        run: |
+          set -euo pipefail
+          xcrun llvm-cov report .build/debug/nigiri \
+            -instr-profile=/tmp/nigiri.profdata \
+            Sources/nigiri/Layout Sources/nigiri/Config
+          pct=$(xcrun llvm-cov export -summary-only .build/debug/nigiri \
+            -instr-profile=/tmp/nigiri.profdata \
+            Sources/nigiri/Layout Sources/nigiri/Config \
+            | python3 -c "import json,sys; print(f\"{json.load(sys.stdin)['data'][0]['totals']['lines']['percent']:.1f}\")")
+          echo "Line coverage of Layout/ + Config/: $pct% (floor $FLOOR%)"
+          if [ "$(printf '%s\n' "$pct" "$FLOOR" | sort -g | head -1)" != "$FLOOR" ]; then
+            echo "::error::coverage $pct% is below the $FLOOR% floor - add checks for the logic you introduced"
+            exit 1
+          fi

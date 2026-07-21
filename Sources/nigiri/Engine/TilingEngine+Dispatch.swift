@@ -43,13 +43,29 @@ extension TilingEngine {
         // like niri's floating space - the nearest window in that direction,
         // not the next entry in the list.
         case "focus-column-left":
-            if workspace.isFloatingActive { focusFloatingGeometric(dx: -1, dy: 0) } else { focusColumn(delta: -1) }
+            if workspace.isFloatingActive {
+                focusFloatingGeometric(dx: -1, dy: 0)
+            } else {
+                focusColumn(delta: -1)
+            }
         case "focus-column-right":
-            if workspace.isFloatingActive { focusFloatingGeometric(dx: 1, dy: 0) } else { focusColumn(delta: 1) }
+            if workspace.isFloatingActive {
+                focusFloatingGeometric(dx: 1, dy: 0)
+            } else {
+                focusColumn(delta: 1)
+            }
         case "focus-window-up":
-            if workspace.isFloatingActive { focusFloatingGeometric(dx: 0, dy: -1) } else { focusWindowInStack(delta: -1) }
+            if workspace.isFloatingActive {
+                focusFloatingGeometric(dx: 0, dy: -1)
+            } else {
+                focusWindowInStack(delta: -1)
+            }
         case "focus-window-down":
-            if workspace.isFloatingActive { focusFloatingGeometric(dx: 0, dy: 1) } else { focusWindowInStack(delta: 1) }
+            if workspace.isFloatingActive {
+                focusFloatingGeometric(dx: 0, dy: 1)
+            } else {
+                focusWindowInStack(delta: 1)
+            }
         case "focus-column-right-or-first": focusColumnWrapping(delta: 1)
         case "focus-column-left-or-last": focusColumnWrapping(delta: -1)
         case "focus-column":
@@ -69,8 +85,11 @@ extension TilingEngine {
             if let n = intArg { moveWorkspaceToIndex(n) }
         case "move-window-to-workspace":
             let follow = !parts.contains("focus=false")
-            if let n = intArg { moveWindowToWorkspace(n, focus: follow) }
-            else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) { moveWindowToWorkspace(idx + 1, focus: follow) }
+            if let n = intArg {
+                moveWindowToWorkspace(n, focus: follow)
+            } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
+                moveWindowToWorkspace(idx + 1, focus: follow)
+            }
         case "move-window-to-workspace-up": moveWindowToWorkspace(activeWorkspaceIndex)
         case "move-window-to-workspace-down": moveWindowToWorkspace(activeWorkspaceIndex + 2)
         case "move-window-to-floating": moveWindow(toFloating: true)
@@ -88,28 +107,48 @@ extension TilingEngine {
         case "focus-column-first": focusColumnEdge(first: true)
         case "focus-column-last": focusColumnEdge(first: false)
         case "focus-workspace":
-            if let n = intArg { focusWorkspace(n) }
-            else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) { focusWorkspace(idx + 1) }
+            if let n = intArg {
+                focusWorkspace(n)
+            } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
+                focusWorkspace(idx + 1)
+            }
         case "focus-workspace-previous": focusWorkspacePrevious()
         case "focus-workspace-up": focusWorkspaceRelative(delta: -1)
         case "focus-workspace-down": focusWorkspaceRelative(delta: 1)
         case "move-column-left":
-            if workspace.isFloatingActive { moveFloatingWindow(dx: -50, dy: 0) } else { moveColumn(delta: -1) }
+            if workspace.isFloatingActive {
+                moveFloatingWindow(dx: -50, dy: 0)
+            } else {
+                moveColumn(delta: -1)
+            }
         case "move-column-right":
             if workspace.isFloatingActive { moveFloatingWindow(dx: 50, dy: 0) } else { moveColumn(delta: 1) }
         case "move-window-up":
-            if workspace.isFloatingActive { moveFloatingWindow(dx: 0, dy: -50) } else { moveWindowInStack(delta: -1) }
+            if workspace.isFloatingActive {
+                moveFloatingWindow(dx: 0, dy: -50)
+            } else {
+                moveWindowInStack(delta: -1)
+            }
         case "move-window-down":
-            if workspace.isFloatingActive { moveFloatingWindow(dx: 0, dy: 50) } else { moveWindowInStack(delta: 1) }
+            if workspace.isFloatingActive {
+                moveFloatingWindow(dx: 0, dy: 50)
+            } else {
+                moveWindowInStack(delta: 1)
+            }
         case "move-column-to-first": moveColumnToEdge(first: true)
         case "move-column-to-last": moveColumnToEdge(first: false)
         case "move-column-to-workspace":
             // niri's `focus` parameter, default true (niri-ipc/src/lib.rs).
             let follow = !parts.contains("focus=false")
-            if let n = intArg { moveColumnToWorkspace(n, focus: follow) }
-            else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) { moveColumnToWorkspace(idx + 1, focus: follow) }
-        case "move-column-to-workspace-up": moveColumnToWorkspace(activeWorkspaceIndex, focus: !parts.contains("focus=false"))
-        case "move-column-to-workspace-down": moveColumnToWorkspace(activeWorkspaceIndex + 2, focus: !parts.contains("focus=false"))
+            if let n = intArg {
+                moveColumnToWorkspace(n, focus: follow)
+            } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
+                moveColumnToWorkspace(idx + 1, focus: follow)
+            }
+        case "move-column-to-workspace-up":
+            moveColumnToWorkspace(activeWorkspaceIndex, focus: !parts.contains("focus=false"))
+        case "move-column-to-workspace-down":
+            moveColumnToWorkspace(activeWorkspaceIndex + 2, focus: !parts.contains("focus=false"))
         case "move-workspace-up": moveWorkspace(delta: -1)
         case "move-workspace-down": moveWorkspace(delta: 1)
         case "consume-or-expel-window-left", "consume-or-expel-left": consumeOrExpel(delta: -1)
@@ -129,16 +168,31 @@ extension TilingEngine {
         case "switch-preset-window-height": switchPresetWindowHeight()
         case "switch-preset-window-width": switchPresetWindowWidth()
         case "set-column-width":
-            guard let change = sizeArg(1) else { print("[action] set-column-width: \"50%\", \"+10%\", \"1000\" o \"+100\""); return }
-            if workspace.isFloatingActive { resizeFloatingWindow(widthDeltaPercent: change.asFloatingDelta) } else { setColumnWidth(change) }
+            guard let change = sizeArg(1) else {
+                print("[action] set-column-width: \"50%\", \"+10%\", \"1000\" o \"+100\""); return
+            }
+            if workspace.isFloatingActive {
+                resizeFloatingWindow(widthDeltaPercent: change.asFloatingDelta)
+            } else {
+                setColumnWidth(change)
+            }
         case "set-window-height":
-            guard let change = sizeArg(1) else { print("[action] set-window-height: \"50%\", \"+10%\", \"1000\" o \"+100\""); return }
-            if workspace.isFloatingActive { resizeFloatingWindow(heightDeltaPercent: change.asFloatingDelta) } else { setWindowHeight(change) }
+            guard let change = sizeArg(1) else {
+                print("[action] set-window-height: \"50%\", \"+10%\", \"1000\" o \"+100\""); return
+            }
+            if workspace.isFloatingActive {
+                resizeFloatingWindow(heightDeltaPercent: change.asFloatingDelta)
+            } else {
+                setWindowHeight(change)
+            }
         case "reset-window-height": resetWindowHeight()
         case "expand-column-to-available-width": expandColumnToAvailableWidth()
         case "resize-edge":
-            if parts.count > 2, let d = sizeArg(2)?.asFloatingDelta { resizeEdge(String(parts[1]), deltaPercent: d) }
-            else { print("[action] usage: resize-edge <left|right|top|bottom> <±percent>") }
+            if parts.count > 2, let d = sizeArg(2)?.asFloatingDelta {
+                resizeEdge(String(parts[1]), deltaPercent: d)
+            } else {
+                print("[action] usage: resize-edge <left|right|top|bottom> <±percent>")
+            }
         case "center-column": centerColumn()
         case "center-visible-columns": centerVisibleColumns()
         case "toggle-window-floating": toggleWindowFloating()
@@ -194,11 +248,13 @@ extension TilingEngine {
         emptyWorkspaceAboveFirst = config.emptyWorkspaceAboveFirst
         screenshotPath = config.screenshotPath
         Self.spawnEnvironmentOverrides = config.environment
-        overviewPanel.applyStyle(zoom: config.overviewZoom, backdrop: config.overviewBackdrop,
-                                 useWallpaper: !config.overviewBackdropSet)
+        overviewPanel.applyStyle(
+            zoom: config.overviewZoom, backdrop: config.overviewBackdrop,
+            useWallpaper: !config.overviewBackdropSet)
         insertHint.applyStyle(off: config.insertHintOff, color: config.insertHintColor)
-        ring.applyShadow(on: config.shadowOn, softness: config.shadowSoftness,
-                         offset: config.shadowOffset, color: config.shadowColor)
+        ring.applyShadow(
+            on: config.shadowOn, softness: config.shadowSoftness,
+            offset: config.shadowOffset, color: config.shadowColor)
         ColumnLayoutEngine.presetWindowHeightSizes = config.presetWindowHeightSizes
         tabIndicators.applyStyle(active: config.tabActiveColor, inactive: config.tabInactiveColor)
         ColumnLayoutEngine.defaultColumnWidth = config.defaultColumnWidth
@@ -256,12 +312,18 @@ extension TilingEngine {
         listener.unregisterAll()
         bindLastFire = [:]
         for bind in config.binds {
-            let action = bind.action, combo = bind.combo, cooldown = bind.cooldownMs
+            let action = bind.action
+            let combo = bind.combo
+            let cooldown = bind.cooldownMs
             listener.register(bind.keyCode, modifiers: bind.modifiers) {
                 // niri's cooldown-ms: rate-limit repeat firings of this bind.
                 if let cooldown {
                     let now = Date()
-                    if let last = self.bindLastFire[combo], now.timeIntervalSince(last) * 1000 < Double(cooldown) { return }
+                    if let last = self.bindLastFire[combo],
+                        now.timeIntervalSince(last) * 1000 < Double(cooldown)
+                    {
+                        return
+                    }
                     self.bindLastFire[combo] = now
                 }
                 // The combo is logged with the action so "I pressed X and Y
@@ -272,22 +334,28 @@ extension TilingEngine {
                 self.performAction(action)
             }
         }
-        print("binds resueltos contra el layout: \(NigiriConfig.layoutKeyCodesSource)\(config.bindsLayout.map { " (fijado en config: \($0))" } ?? "")")
-        let bound = Set(config.binds.compactMap { bind -> String? in
-            guard let first = bind.action.split(separator: " ").first.map(String.init) else { return nil }
-            return actionAliases[first] ?? first
-        })
+        print(
+            "binds resueltos contra el layout: \(NigiriConfig.layoutKeyCodesSource)\(config.bindsLayout.map { " (fijado en config: \($0))" } ?? "")"
+        )
+        let bound = Set(
+            config.binds.compactMap { bind -> String? in
+                guard let first = bind.action.split(separator: " ").first.map(String.init) else { return nil }
+                return actionAliases[first] ?? first
+            })
         let wasVisible = hotkeyOverlay.isVisible
         if wasVisible { hotkeyOverlay.toggle() }
         // niri's hotkey-overlay-title labels the bind in the overlay.
-        hotkeyOverlay = HotkeyOverlay(bindings:
-            config.binds.filter { !$0.hiddenFromOverlay }.map { ($0.combo, $0.title ?? $0.action) }
+        hotkeyOverlay = HotkeyOverlay(
+            bindings:
+                config.binds.filter { !$0.hiddenFromOverlay }.map { ($0.combo, $0.title ?? $0.action) }
                 + actionCatalog.filter { !bound.contains($0) }.map { ("", $0) })
         if wasVisible { hotkeyOverlay.toggle() }
         if !initial {
             reflow()
             updateRingImmediate()
-            print("config reloaded: \(config.binds.count) binds, gap \(Int(config.gap)), \(config.rules.count) window rules")
+            print(
+                "config reloaded: \(config.binds.count) binds, gap \(Int(config.gap)), \(config.rules.count) window rules"
+            )
         }
     }
 }

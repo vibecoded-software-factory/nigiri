@@ -41,7 +41,9 @@ extension TilingEngine {
     // so any window opening/closing/moving re-settles the set.
     func compactWorkspaces() {
         let plan = TilingEngine.compactPlan(
-            workspaces.map { (empty: $0.columns.isEmpty && $0.floatingWindows.isEmpty, named: $0.name != nil) },
+            workspaces.map {
+                (empty: $0.columns.isEmpty && $0.floatingWindows.isEmpty, named: $0.name != nil)
+            },
             active: activeWorkspaceIndex, previous: previousWorkspaceIndex,
             emptyAboveFirst: emptyWorkspaceAboveFirst)
         workspaces = plan.keep.map { workspaces[$0] }
@@ -65,8 +67,10 @@ extension TilingEngine {
         let insertLeading: Bool
     }
 
-    static func compactPlan(_ slots: [(empty: Bool, named: Bool)], active: Int, previous: Int,
-                            emptyAboveFirst: Bool) -> CompactPlan {
+    static func compactPlan(
+        _ slots: [(empty: Bool, named: Bool)], active: Int, previous: Int,
+        emptyAboveFirst: Bool
+    ) -> CompactPlan {
         var keep: [Int] = []
         var newActive = active
         var newPrevious = previous
@@ -76,11 +80,15 @@ extension TilingEngine {
             // the active one, the trailing one, or the leading one under
             // empty-workspace-above-first.
             let keptAboveFirst = emptyAboveFirst && i == 0
-            let removable = slot.empty && !slot.named && i != active && i != slots.count - 1 && !keptAboveFirst
+            let removable =
+                slot.empty && !slot.named && i != active && i != slots.count - 1 && !keptAboveFirst
             if removable {
                 if newActive > keep.count { newActive -= 1 }
-                if newPrevious > keep.count { newPrevious -= 1 }
-                else if newPrevious == keep.count { newPrevious = newActive }
+                if newPrevious > keep.count {
+                    newPrevious -= 1
+                } else if newPrevious == keep.count {
+                    newPrevious = newActive
+                }
                 continue
             }
             keep.append(i)
@@ -91,11 +99,12 @@ extension TilingEngine {
         let lastEmpty = keep.last.map { slots[$0].empty } ?? true
         let firstEmpty = keep.first.map { slots[$0].empty } ?? true
         let insertLeading = emptyAboveFirst && !firstEmpty
-        return CompactPlan(keep: keep,
-                           active: activeSlot + (insertLeading ? 1 : 0),
-                           previous: previousSlot + (insertLeading ? 1 : 0),
-                           appendTrailing: !lastEmpty,
-                           insertLeading: insertLeading)
+        return CompactPlan(
+            keep: keep,
+            active: activeSlot + (insertLeading ? 1 : 0),
+            previous: previousSlot + (insertLeading ? 1 : 0),
+            appendTrailing: !lastEmpty,
+            insertLeading: insertLeading)
     }
 
     // What a single liveness probe concluded about a window.
@@ -161,7 +170,9 @@ extension TilingEngine {
             fallPairs.append((w, strip))
             targets.append((w, strip))
         }
-        var enteringTargets = ColumnLayoutEngine.targetFrames(columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex, viewOffset: workspace.viewOffset)
+        var enteringTargets = ColumnLayoutEngine.targetFrames(
+            columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex,
+            viewOffset: workspace.viewOffset)
         var enteringFloating: [ManagedWindow] = []
         for w in workspace.floatingWindows {
             if let stashed = w.stashedFrame {
@@ -179,7 +190,9 @@ extension TilingEngine {
         // begins, which reads as the window emerging.
         for (w, frame) in enteringTargets {
             let pre = ColumnLayoutEngine.applyFrame(w, target: stashStrip(frame, screenFrame: screenFrame))
-            debugLog("[transition] \(w.title): pre=(\(Int(pre.origin.x)),\(Int(pre.origin.y))) target=(\(Int(frame.origin.x)),\(Int(frame.origin.y))) viewOffset=\(Int(workspace.viewOffset))")
+            debugLog(
+                "[transition] \(w.title): pre=(\(Int(pre.origin.x)),\(Int(pre.origin.y))) target=(\(Int(frame.origin.x)),\(Int(frame.origin.y))) viewOffset=\(Int(workspace.viewOffset))"
+            )
         }
         targets += enteringTargets
 
@@ -219,14 +232,19 @@ extension TilingEngine {
         // the ring appears the moment the FOCUSED window arrives instead of
         // when the whole animation settles.
         let clearStashOnArrival = enteringFloating
-        animateFrames(targets, animation: "workspace-switch", trackRing: false, onWindowSettled: { w in
-            if leavingSet.contains(where: { $0 === w }) {
-                guard let frame = WindowMover.currentFrame(w.axElement) else { return }
-                _ = ColumnLayoutEngine.applyFrame(w, target: self.parkedOffScreen(frame, screenFrame: screenFrame))
-            } else if w === focusedEntering, let target = enteringTargets.first(where: { $0.0 === w })?.1 {
-                self.ring.show(around: target)
+        animateFrames(
+            targets, animation: "workspace-switch", trackRing: false,
+            onWindowSettled: { w in
+                if leavingSet.contains(where: { $0 === w }) {
+                    guard let frame = WindowMover.currentFrame(w.axElement) else { return }
+                    _ = ColumnLayoutEngine.applyFrame(
+                        w, target: self.parkedOffScreen(frame, screenFrame: screenFrame))
+                } else if w === focusedEntering, let target = enteringTargets.first(where: { $0.0 === w })?.1
+                {
+                    self.ring.show(around: target)
+                }
             }
-        }) { cancelled in
+        ) { cancelled in
             var discovered = false
             if !cancelled {
                 // The floating windows made it home; only now is their return
@@ -267,7 +285,8 @@ extension TilingEngine {
         // empty-workspace-above-first: going up from the first workspace
         // grows a new empty one above it instead of doing nothing.
         if delta < 0, activeWorkspaceIndex == 0, emptyWorkspaceAboveFirst,
-           !(workspace.columns.isEmpty && workspace.floatingWindows.isEmpty) {
+            !(workspace.columns.isEmpty && workspace.floatingWindows.isEmpty)
+        {
             workspaces.insert(Workspace(), at: 0)
             activeWorkspaceIndex += 1
             previousWorkspaceIndex += 1
@@ -348,7 +367,6 @@ extension TilingEngine {
         reflow()
     }
 
-
     // niri's toggle-column-tabbed-display: flip the focused column between
     // a vertical stack and one-window-under-a-tab-bar. The stack's height
     // cache dies with the mode - the shapes are unrelated.
@@ -357,7 +375,9 @@ extension TilingEngine {
         column.isTabbed.toggle()
         column.cachedHeights = nil
         reflow()
-        print("toggle-column-tabbed-display -> \(column.isTabbed ? "tabbed" : "normal") (\(column.windows.count) window(s))")
+        print(
+            "toggle-column-tabbed-display -> \(column.isTabbed ? "tabbed" : "normal") (\(column.windows.count) window(s))"
+        )
     }
 
     // niri's switch-preset-window-height, applied to the focused window
@@ -371,12 +391,14 @@ extension TilingEngine {
         // which skipped entries for any window sized off-preset.
         let presets = ColumnLayoutEngine.presetWindowHeightSizes.map { size -> CGFloat in
             switch size {
-            case .proportion(let p): return ColumnLayoutEngine.height(forProportion: p, usableHeight: columnHeight)
+            case .proportion(let p):
+                return ColumnLayoutEngine.height(forProportion: p, usableHeight: columnHeight)
             case .fixed(let px): return px
             }
         }
         guard !presets.isEmpty else { return }
-        let current = window.manualHeightPx ?? (WindowMover.currentFrame(window.axElement)?.height ?? columnHeight)
+        let current =
+            window.manualHeightPx ?? (WindowMover.currentFrame(window.axElement)?.height ?? columnHeight)
         let base = window.presetHeightIndex ?? presets.firstIndex { $0 > current + 1 }.map { $0 - 1 } ?? -1
         let nextIndex = ((base + delta) % presets.count + presets.count) % presets.count
         window.presetHeightIndex = nextIndex

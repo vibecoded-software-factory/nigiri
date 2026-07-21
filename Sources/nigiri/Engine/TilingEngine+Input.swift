@@ -107,16 +107,21 @@ extension TilingEngine {
     // own selection, so this tick was overriding raiseOverviewSelection's
     // focus and flapping against the relayout every ~0.15s.
     // onAppActivated has the same guard; this one was forgotten.
-    static func shouldFocusFollowMouse(overviewActive: Bool, transitioning: Bool,
-                                       buttonsDown: Int, sinceLastTick: TimeInterval) -> Bool {
+    static func shouldFocusFollowMouse(
+        overviewActive: Bool, transitioning: Bool,
+        buttonsDown: Int, sinceLastTick: TimeInterval
+    ) -> Bool {
         sinceLastTick > 0.15 && !overviewActive && !transitioning && buttonsDown == 0
     }
 
     func focusFollowMouseTick() {
-        guard Self.shouldFocusFollowMouse(overviewActive: isOverviewActive,
-                                          transitioning: isTransitioningWorkspace,
-                                          buttonsDown: NSEvent.pressedMouseButtons,
-                                          sinceLastTick: Date().timeIntervalSince(lastMouseFocusTick)) else { return }
+        guard
+            Self.shouldFocusFollowMouse(
+                overviewActive: isOverviewActive,
+                transitioning: isTransitioningWorkspace,
+                buttonsDown: NSEvent.pressedMouseButtons,
+                sinceLastTick: Date().timeIntervalSince(lastMouseFocusTick))
+        else { return }
         lastMouseFocusTick = Date()
         guard let primary = NSScreen.screens.first else { return }
         // NSEvent.mouseLocation is AppKit bottom-left space - flip to AX.

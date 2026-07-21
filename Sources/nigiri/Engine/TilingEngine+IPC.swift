@@ -7,12 +7,15 @@ extension TilingEngine {
 
     func jsonLine(_ object: Any) -> String {
         guard JSONSerialization.isValidJSONObject(object),
-              let data = try? JSONSerialization.data(withJSONObject: object),
-              let text = String(data: data, encoding: .utf8) else { return "{}" }
+            let data = try? JSONSerialization.data(withJSONObject: object),
+            let text = String(data: data, encoding: .utf8)
+        else { return "{}" }
         return text
     }
 
-    func windowSnapshot(_ w: ManagedWindow, workspaceIndex: Int, column: Int?, row: Int?, floating: Bool) -> [String: Any] {
+    func windowSnapshot(
+        _ w: ManagedWindow, workspaceIndex: Int, column: Int?, row: Int?, floating: Bool
+    ) -> [String: Any] {
         var entry: [String: Any] = [
             "title": w.title,
             "pid": Int(w.pid),
@@ -23,7 +26,10 @@ extension TilingEngine {
         if let column { entry["column"] = column }
         if let row { entry["row"] = row }
         if let frame = WindowMover.currentFrame(w.axElement) {
-            entry["frame"] = ["x": Int(frame.origin.x), "y": Int(frame.origin.y), "w": Int(frame.width), "h": Int(frame.height)]
+            entry["frame"] = [
+                "x": Int(frame.origin.x), "y": Int(frame.origin.y), "w": Int(frame.width),
+                "h": Int(frame.height),
+            ]
         }
         return entry
     }

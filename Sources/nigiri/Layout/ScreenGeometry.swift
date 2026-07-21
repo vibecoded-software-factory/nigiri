@@ -29,9 +29,10 @@ enum ScreenGeometry {
         // tiled ever lands there. visibleFrame already excludes the menu bar
         // and the Dock; struts are on top of that.
         let s = struts
-        var frame = CGRect(x: visible.origin.x + s.left, y: flippedY + s.top,
-                           width: visible.width - s.left - s.right,
-                           height: visible.height - s.top - s.bottom)
+        var frame = CGRect(
+            x: visible.origin.x + s.left, y: flippedY + s.top,
+            width: visible.width - s.left - s.right,
+            height: visible.height - s.top - s.bottom)
         frame.size.width = max(1, frame.size.width)
         frame.size.height = max(1, frame.size.height)
         return frame
@@ -47,11 +48,16 @@ enum ScreenGeometry {
     static func onScreenWindowBoundsByPid() -> [pid_t: [CGRect]] {
         var result: [pid_t: [CGRect]] = [:]
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: AnyObject]] else { return result }
+        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: AnyObject]] else {
+            return result
+        }
         for entry in list {
             guard let pid = entry[kCGWindowOwnerPID as String] as? pid_t,
-                  let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
-            let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+                let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat]
+            else { continue }
+            let frame = CGRect(
+                x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0,
+                height: bounds["Height"] ?? 0)
             result[pid, default: []].append(frame)
         }
         return result
