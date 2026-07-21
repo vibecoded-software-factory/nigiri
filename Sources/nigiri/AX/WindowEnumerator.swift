@@ -18,7 +18,10 @@ enum WindowEnumerator {
                 // some panels/sheets return unexpected attribute shapes.
                 guard let frame = WindowMover.currentFrame(w) else { continue }
                 let title: String = AX.attribute(w, kAXTitleAttribute as String) ?? "(no title)"
-                results.append(WindowInfo(appName: app.localizedName ?? "?", pid: app.processIdentifier, title: title, frame: frame))
+                results.append(
+                    WindowInfo(
+                        appName: app.localizedName ?? "?", pid: app.processIdentifier, title: title,
+                        frame: frame))
             }
         }
         return results

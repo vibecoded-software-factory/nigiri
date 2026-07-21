@@ -24,16 +24,20 @@ enum ColumnLayoutEngine {
     static func newEpoch() { epoch &+= 1 }
     // niri's real preset-column-widths (layout.kdl): 1/3, 1/2, 2/3 of the
     // output, "taking gaps into account".
-    static var presetColumnSizes: [NigiriConfig.PresetSize] = [.proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0)]
+    static var presetColumnSizes: [NigiriConfig.PresetSize] = [
+        .proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0),
+    ]
     // niri's `preset-column-widths { fixed <px> }`, kept in pixels until the
     // usable width is known.
     // niri's preset-window-heights - a SEPARATE list, not the widths reused.
-    static var presetWindowHeightSizes: [NigiriConfig.PresetSize] = [.proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0)]
+    static var presetWindowHeightSizes: [NigiriConfig.PresetSize] = [
+        .proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0),
+    ]
     // What a brand-new column asks for (niri's default-column-width).
     static var defaultColumnWidth: CGFloat = 0.5
 
     struct Placement {
-        let x: CGFloat // virtual, not yet adjusted for viewOffset
+        let x: CGFloat  // virtual, not yet adjusted for viewOffset
         let width: CGFloat
     }
 
@@ -43,7 +47,8 @@ enum ColumnLayoutEngine {
     // just extends the scrollable strip instead of forcing the others to
     // shrink. See the formula below: it is niri's, and it is deliberately
     // independent of how many columns exist.
-    static func columnPlacements(columns: [Column], usableWidth: CGFloat, maximizedIndex: Int?) -> [Placement] {
+    static func columnPlacements(columns: [Column], usableWidth: CGFloat, maximizedIndex: Int?) -> [Placement]
+    {
         var x: CGFloat = 0
         var result: [Placement] = []
         for (idx, column) in columns.enumerated() {
@@ -61,7 +66,8 @@ enum ColumnLayoutEngine {
             // The shape is what makes proportions tile exactly: three 1/3
             // columns come to (working_w - gap) - 3*gap plus the two gaps
             // between them = working_w - 2*gap, the full working area.
-            let requested = idx == maximizedIndex
+            let requested =
+                idx == maximizedIndex
                 ? usableWidth
                 : (usableWidth + gap) * column.widthProportion - gap
             // A column whose windows refuse to shrink below cachedMinWidth
@@ -95,8 +101,10 @@ enum ColumnLayoutEngine {
     // Mod+R on any newly opened window went to preset 0 - 1/3 here where
     // niri gives 2/3. The floating branch of the same action already did
     // this, so one key behaved differently depending on the layer.
-    static func presetIndex(after current: CGFloat, in presets: [CGFloat], delta: Int,
-                            from stored: Int?) -> Int? {
+    static func presetIndex(
+        after current: CGFloat, in presets: [CGFloat], delta: Int,
+        from stored: Int?
+    ) -> Int? {
         guard !presets.isEmpty else { return nil }
         if let stored {
             return ((stored + delta) % presets.count + presets.count) % presets.count
@@ -142,7 +150,8 @@ enum ColumnLayoutEngine {
     // left-aligns those unconditionally; this aligned whichever edge had
     // been clipped, so such a column could be shown right-aligned with its
     // left half unreachable.
-    static func fitOffset(x: CGFloat, width: CGFloat, currentOffset: CGFloat, usableWidth: CGFloat) -> CGFloat {
+    static func fitOffset(x: CGFloat, width: CGFloat, currentOffset: CGFloat, usableWidth: CGFloat) -> CGFloat
+    {
         if usableWidth <= width { return x }
         // Already fully visible: niri leaves the view exactly where it is.
         if currentOffset <= x && x + width <= currentOffset + usableWidth { return currentOffset }
@@ -154,12 +163,16 @@ enum ColumnLayoutEngine {
         return distanceToLeft <= distanceToRight ? x : x + width - usableWidth
     }
 
-    static func scrollOffset(toShow index: Int, placements: [Placement], currentOffset: CGFloat, usableWidth: CGFloat, previousIndex: Int? = nil) -> CGFloat {
+    static func scrollOffset(
+        toShow index: Int, placements: [Placement], currentOffset: CGFloat, usableWidth: CGFloat,
+        previousIndex: Int? = nil
+    ) -> CGFloat {
         guard placements.indices.contains(index) else { return currentOffset }
         let p = placements[index]
         // A column wider than the view can't be centred; niri hands those
         // back to the fit path rather than centring them off-screen.
-        let centered = usableWidth <= p.width
+        let centered =
+            usableWidth <= p.width
             ? fitOffset(x: p.x, width: p.width, currentOffset: currentOffset, usableWidth: usableWidth)
             : p.x - (usableWidth - p.width) / 2
         if alwaysCenterSingleColumn, placements.count <= 1 { return centered }
@@ -171,15 +184,19 @@ enum ColumnLayoutEngine {
             // focus came from, not against the previous column itself: what
             // matters is whether the view can still hold the pair it is
             // about to scroll across.
-            guard let previousIndex, previousIndex != index, placements.indices.contains(previousIndex) else { break }
-            let sourceIndex = previousIndex > index
+            guard let previousIndex, previousIndex != index, placements.indices.contains(previousIndex) else {
+                break
+            }
+            let sourceIndex =
+                previousIndex > index
                 ? min(index + 1, placements.count - 1)
                 : max(0, index - 1)
             let source = placements[sourceIndex]
             // niri adds `gaps * 2` here because it measures against the
             // full working area; usableWidth already has both subtracted,
             // so the term is the same one, not an extra.
-            let totalWidth = source.x < p.x
+            let totalWidth =
+                source.x < p.x
                 ? p.x - source.x + p.width
                 : source.x - p.x + source.width
             if totalWidth > usableWidth { return centered }
@@ -236,24 +253,30 @@ enum ColumnLayoutEngine {
         let parked: [ManagedWindow]
     }
 
-    static func columnGeometry(columns: [Column], in screenFrame: CGRect,
-                               maximizedIndex: Int?, viewOffset: CGFloat) -> [ColumnGeometry] {
+    static func columnGeometry(
+        columns: [Column], in screenFrame: CGRect,
+        maximizedIndex: Int?, viewOffset: CGFloat
+    ) -> [ColumnGeometry] {
         let usableWidth = screenFrame.width - 2 * gap
-        let placements = columnPlacements(columns: columns, usableWidth: usableWidth, maximizedIndex: maximizedIndex)
+        let placements = columnPlacements(
+            columns: columns, usableWidth: usableWidth, maximizedIndex: maximizedIndex)
         return zip(columns, placements).compactMap { column, placement in
             guard !column.windows.isEmpty else { return nil }
-            let x = grantedX(screenFrame.minX + gap + (placement.x - viewOffset),
-                             width: placement.width, screenFrame: screenFrame)
+            let x = grantedX(
+                screenFrame.minX + gap + (placement.x - viewOffset),
+                width: placement.width, screenFrame: screenFrame)
             var visibleOnly: ManagedWindow? = nil
             var parked: [ManagedWindow] = []
             if column.isTabbed {
-                let activeIndex = column.windows.indices.contains(column.focusedWindowIndex) ? column.focusedWindowIndex : 0
+                let activeIndex =
+                    column.windows.indices.contains(column.focusedWindowIndex) ? column.focusedWindowIndex : 0
                 visibleOnly = column.windows[activeIndex]
                 parked = column.windows.enumerated().filter { $0.offset != activeIndex }.map(\.element)
             }
-            return ColumnGeometry(column: column, x: x, width: placement.width,
-                                  y: screenFrame.minY + gap, height: screenFrame.height - 2 * gap,
-                                  visibleOnly: visibleOnly, parked: parked)
+            return ColumnGeometry(
+                column: column, x: x, width: placement.width,
+                y: screenFrame.minY + gap, height: screenFrame.height - 2 * gap,
+                visibleOnly: visibleOnly, parked: parked)
         }
     }
 
@@ -269,11 +292,14 @@ enum ColumnLayoutEngine {
     // zoomed-out camera has no screen edge to clamp against, so it must not
     // go through the layout's clamp at all; parked tabs are excluded here by
     // identity instead of by position.
-    static func overviewFrames(columns: [Column], in screenFrame: CGRect, maximizedIndex: Int?,
-                               viewOffset: CGFloat = 0) -> [(window: ManagedWindow, frame: CGRect)] {
+    static func overviewFrames(
+        columns: [Column], in screenFrame: CGRect, maximizedIndex: Int?,
+        viewOffset: CGFloat = 0
+    ) -> [(window: ManagedWindow, frame: CGRect)] {
         guard !columns.isEmpty else { return [] }
         let usableWidth = screenFrame.width - 2 * gap
-        let placements = columnPlacements(columns: columns, usableWidth: usableWidth, maximizedIndex: maximizedIndex)
+        let placements = columnPlacements(
+            columns: columns, usableWidth: usableWidth, maximizedIndex: maximizedIndex)
         var result: [(ManagedWindow, CGRect)] = []
         for (column, placement) in zip(columns, placements) {
             guard !column.windows.isEmpty else { continue }
@@ -286,12 +312,15 @@ enum ColumnLayoutEngine {
             let height = screenFrame.height - 2 * gap
             if column.isTabbed {
                 // One card for the whole column, like niri's overview.
-                let activeIndex = column.windows.indices.contains(column.focusedWindowIndex) ? column.focusedWindowIndex : 0
-                result.append((column.windows[activeIndex], CGRect(x: x, y: y, width: placement.width, height: height)))
+                let activeIndex =
+                    column.windows.indices.contains(column.focusedWindowIndex) ? column.focusedWindowIndex : 0
+                result.append(
+                    (column.windows[activeIndex], CGRect(x: x, y: y, width: placement.width, height: height)))
                 continue
             }
             let n = column.windows.count
-            let heights = column.cachedHeights?.count == n
+            let heights =
+                column.cachedHeights?.count == n
                 ? column.cachedHeights!
                 : naiveHeights(for: column.windows, usableHeight: height - CGFloat(n - 1) * gap)
             var top = y
@@ -308,12 +337,18 @@ enum ColumnLayoutEngine {
     // wins (a window nobody can read is worse than one too wide). Extracted
     // from the engine so it can be tested - and because its caller has to be
     // able to pass a floor it captured BEFORE bumping the epoch.
-    static func clampProportion(_ proportion: CGFloat, minWidth: CGFloat?, maxWidth: CGFloat?,
-                                usableWidth: CGFloat) -> CGFloat {
+    static func clampProportion(
+        _ proportion: CGFloat, minWidth: CGFloat?, maxWidth: CGFloat?,
+        usableWidth: CGFloat
+    ) -> CGFloat {
         var p = min(1.0, max(0.05, proportion))
         guard usableWidth > 0 else { return p }
-        if let maxWidth { p = min(p, ColumnLayoutEngine.proportion(forWidth: maxWidth, usableWidth: usableWidth)) }
-        if let minWidth { p = max(p, ColumnLayoutEngine.proportion(forWidth: minWidth, usableWidth: usableWidth)) }
+        if let maxWidth {
+            p = min(p, ColumnLayoutEngine.proportion(forWidth: maxWidth, usableWidth: usableWidth))
+        }
+        if let minWidth {
+            p = max(p, ColumnLayoutEngine.proportion(forWidth: minWidth, usableWidth: usableWidth))
+        }
         return p
     }
 
@@ -323,8 +358,8 @@ enum ColumnLayoutEngine {
     // gap and the vertical distance to the nearest tile gap inside the
     // column under the cursor. A tie goes to a new column.
     enum InsertPosition: Equatable {
-        case newColumn(Int)          // insert a fresh column at this index
-        case inColumn(Int, Int)      // into this column's stack, at this row
+        case newColumn(Int)  // insert a fresh column at this index
+        case inColumn(Int, Int)  // into this column's stack, at this row
     }
 
     // `frames` is what targetFrames produced for the CURRENT layout (the
@@ -336,8 +371,10 @@ enum ColumnLayoutEngine {
     // 1 - the new tab landed at the top of the stack no matter where the user
     // pointed, and the tab order is visible in the indicator. niri measures
     // the ACTIVE tile and returns its index or index+1 (scrolling.rs).
-    static func insertPosition(columnFrames: [[CGRect]], point: CGPoint, screenFrame: CGRect,
-                               tabbed: [Int?] = []) -> InsertPosition {
+    static func insertPosition(
+        columnFrames: [[CGRect]], point: CGPoint, screenFrame: CGRect,
+        tabbed: [Int?] = []
+    ) -> InsertPosition {
         guard !columnFrames.isEmpty else { return .newColumn(0) }
         // The gaps between columns, aimed at the middle of each gap: one
         // before every column, plus one past the last.
@@ -349,7 +386,8 @@ enum ColumnLayoutEngine {
         if let last = columnFrames.last?.first {
             columnGaps.append((columnFrames.count, last.maxX + gap / 2))
         }
-        let closestColumnGap = columnGaps.min { abs($0.x - point.x) < abs($1.x - point.x) }
+        let closestColumnGap =
+            columnGaps.min { abs($0.x - point.x) < abs($1.x - point.x) }
             ?? (index: 0, x: point.x)
         let horizontalDistance = abs(closestColumnGap.x - point.x)
 
@@ -364,7 +402,8 @@ enum ColumnLayoutEngine {
         var tileGaps: [(index: Int, y: CGFloat)] = []
         for (i, f) in frames.enumerated() { tileGaps.append((i, f.minY - gap / 2)) }
         if let last = frames.last { tileGaps.append((frames.count, last.maxY + gap / 2)) }
-        let closestTileGap = tileGaps.min { abs($0.y - point.y) < abs($1.y - point.y) }
+        let closestTileGap =
+            tileGaps.min { abs($0.y - point.y) < abs($1.y - point.y) }
             ?? (index: 0, y: point.y)
         let verticalDistance = abs(closestTileGap.y - point.y)
 
@@ -383,7 +422,10 @@ enum ColumnLayoutEngine {
     // `skipping` is the windowed-fullscreen window: laying it out at its
     // column size would flicker it on every settle, and the min-width
     // discovery would memorize its full-screen width as the column minimum.
-    static func layout(columns: [Column], in screenFrame: CGRect, maximizedIndex: Int? = nil, viewOffset: CGFloat = 0, skipping: ManagedWindow? = nil) -> Bool {
+    static func layout(
+        columns: [Column], in screenFrame: CGRect, maximizedIndex: Int? = nil, viewOffset: CGFloat = 0,
+        skipping: ManagedWindow? = nil
+    ) -> Bool {
         guard !columns.isEmpty else { return false }
         let usableWidth = screenFrame.width - 2 * gap
         // A pass can DISCOVER a column's real minimum width (see
@@ -395,26 +437,38 @@ enum ColumnLayoutEngine {
         var discoveredAny = false
         for _ in 0..<3 {
             var discovered = false
-            for geometry in columnGeometry(columns: columns, in: screenFrame,
-                                           maximizedIndex: maximizedIndex, viewOffset: viewOffset) {
+            for geometry in columnGeometry(
+                columns: columns, in: screenFrame,
+                maximizedIndex: maximizedIndex, viewOffset: viewOffset)
+            {
                 var actualWidth = geometry.width
                 if let visible = geometry.visibleOnly {
-                    actualWidth = max(actualWidth, applyFrame(visible, target: CGRect(
-                        x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height)).width)
+                    actualWidth = max(
+                        actualWidth,
+                        applyFrame(
+                            visible,
+                            target: CGRect(
+                                x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height)
+                        ).width)
                     for w in geometry.parked {
                         guard let current = WindowMover.currentFrame(w.axElement) else { continue }
-                        _ = applyFrame(w, target: CGRect(x: screenFrame.maxX - 1, y: current.origin.y,
-                                                         width: current.width, height: current.height))
+                        _ = applyFrame(
+                            w,
+                            target: CGRect(
+                                x: screenFrame.maxX - 1, y: current.origin.y,
+                                width: current.width, height: current.height))
                     }
                 } else {
-                    actualWidth = layoutColumn(geometry.column, x: geometry.x, y: geometry.y,
-                                               width: geometry.width, height: geometry.height, skipping: skipping)
+                    actualWidth = layoutColumn(
+                        geometry.column, x: geometry.x, y: geometry.y,
+                        width: geometry.width, height: geometry.height, skipping: skipping)
                 }
                 // A discovered minimum states what the app refuses to shrink
                 // past, so it cannot exceed the working area; a larger value
                 // only comes from measuring a window mid-animation.
                 if actualWidth > geometry.width + 1.0, actualWidth <= usableWidth,
-                   abs((geometry.column.validMinWidth ?? 0) - actualWidth) > 1.0 {
+                    abs((geometry.column.validMinWidth ?? 0) - actualWidth) > 1.0
+                {
                     geometry.column.cachedMinWidth = actualWidth
                     discovered = true
                 }
@@ -437,21 +491,35 @@ enum ColumnLayoutEngine {
     // and with them the only AX reads in this otherwise pure function. Two
     // round-trips per parked window, and the drop preview calls this on every
     // leftMouseDragged (~120/s, inside the event tap's own callback).
-    static func targetFrames(columns: [Column], in screenFrame: CGRect, maximizedIndex: Int? = nil,
-                             viewOffset: CGFloat = 0, includingParked: Bool = true) -> [(window: ManagedWindow, frame: CGRect)] {
+    static func targetFrames(
+        columns: [Column], in screenFrame: CGRect, maximizedIndex: Int? = nil,
+        viewOffset: CGFloat = 0, includingParked: Bool = true
+    ) -> [(window: ManagedWindow, frame: CGRect)] {
         guard !columns.isEmpty else { return [] }
         var result: [(ManagedWindow, CGRect)] = []
-        for geometry in columnGeometry(columns: columns, in: screenFrame,
-                                       maximizedIndex: maximizedIndex, viewOffset: viewOffset) {
+        for geometry in columnGeometry(
+            columns: columns, in: screenFrame,
+            maximizedIndex: maximizedIndex, viewOffset: viewOffset)
+        {
             if let visible = geometry.visibleOnly {
-                result.append((visible, CGRect(x: geometry.x, y: geometry.y,
-                                               width: geometry.width, height: geometry.height)))
+                result.append(
+                    (
+                        visible,
+                        CGRect(
+                            x: geometry.x, y: geometry.y,
+                            width: geometry.width, height: geometry.height)
+                    ))
                 for w in geometry.parked where includingParked {
                     let current = WindowMover.currentFrame(w.axElement)
-                    result.append((w, CGRect(x: screenFrame.maxX - 1,
-                                             y: current?.origin.y ?? geometry.y,
-                                             width: current?.width ?? geometry.width,
-                                             height: current?.height ?? geometry.height)))
+                    result.append(
+                        (
+                            w,
+                            CGRect(
+                                x: screenFrame.maxX - 1,
+                                y: current?.origin.y ?? geometry.y,
+                                width: current?.width ?? geometry.width,
+                                height: current?.height ?? geometry.height)
+                        ))
                 }
                 continue
             }
@@ -460,8 +528,9 @@ enum ColumnLayoutEngine {
             if let cached = geometry.column.cachedHeights, cached.count == n {
                 heights = cached
             } else {
-                heights = naiveHeights(for: geometry.column.windows,
-                                       usableHeight: geometry.height - CGFloat(n - 1) * gap)
+                heights = naiveHeights(
+                    for: geometry.column.windows,
+                    usableHeight: geometry.height - CGFloat(n - 1) * gap)
             }
             var y = geometry.y
             for (w, h) in zip(geometry.column.windows, heights) {
@@ -473,7 +542,10 @@ enum ColumnLayoutEngine {
     }
 
     @discardableResult
-    private static func layoutColumn(_ column: Column, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, skipping: ManagedWindow? = nil) -> CGFloat {
+    private static func layoutColumn(
+        _ column: Column, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
+        skipping: ManagedWindow? = nil
+    ) -> CGFloat {
         guard !column.windows.isEmpty else { return width }
         let n = column.windows.count
 
@@ -516,7 +588,9 @@ enum ColumnLayoutEngine {
         // Weighted, not equal: niri's WindowHeight::Auto carries a weight,
         // so a window that was made taller keeps its ratio when the column's
         // membership changes (see ManagedWindow.heightWeight).
-        let weightTotal = windows.filter { $0.manualHeightPx == nil }.reduce(CGFloat(0)) { $0 + max(0.01, $1.heightWeight) }
+        let weightTotal = windows.filter { $0.manualHeightPx == nil }.reduce(CGFloat(0)) {
+            $0 + max(0.01, $1.heightWeight)
+        }
         let autoSpace = max(0, usableHeight - manualTotal)
         return windows.map { w in
             guard w.manualHeightPx == nil else { return w.manualHeightPx! }
@@ -532,7 +606,9 @@ enum ColumnLayoutEngine {
     // column width, so this redistribution still applies. Manually-sized
     // windows (set-window-height) are exempt entirely - they keep exactly
     // their fixed height and don't participate in the Auto split.
-    private static func probeTargetHeights(column: Column, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> [CGFloat] {
+    private static func probeTargetHeights(
+        column: Column, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat
+    ) -> [CGFloat] {
         let n = CGFloat(column.windows.count)
         let usableHeight = height - gap * (n - 1)
         let manualTotal = column.windows.reduce(CGFloat(0)) { $0 + ($1.manualHeightPx ?? 0) }
@@ -541,7 +617,9 @@ enum ColumnLayoutEngine {
         // Weighted share per window (niri's Auto { weight }), so the first
         // probe already asks for the proportions the stack is supposed to
         // keep instead of an equal slice.
-        let weightTotal = column.windows.filter { $0.manualHeightPx == nil }.reduce(CGFloat(0)) { $0 + max(0.01, $1.heightWeight) }
+        let weightTotal = column.windows.filter { $0.manualHeightPx == nil }.reduce(CGFloat(0)) {
+            $0 + max(0.01, $1.heightWeight)
+        }
         func weightedShare(_ w: ManagedWindow) -> CGFloat {
             guard weightTotal > 0 else { return 0 }
             return autoUsableHeight * max(0.01, w.heightWeight) / weightTotal
@@ -570,8 +648,10 @@ enum ColumnLayoutEngine {
             for (i, w) in column.windows.enumerated() {
                 // `share` starts as each window's weighted share and only
                 // becomes a flat redistribution once someone refuses.
-                let targetH = w.manualHeightPx ?? (stuck[i] ? heights[i] : (redistributed ? share : weightedShare(w)))
-                let actual = applyFrame(w, target: CGRect(x: x, y: currentY, width: width, height: targetH)).height
+                let targetH =
+                    w.manualHeightPx ?? (stuck[i] ? heights[i] : (redistributed ? share : weightedShare(w)))
+                let actual = applyFrame(w, target: CGRect(x: x, y: currentY, width: width, height: targetH))
+                    .height
                 heights[i] = actual
                 currentY += actual + gap
                 if w.manualHeightPx == nil, !stuck[i], actual > targetH + stuckTolerance {
@@ -613,7 +693,9 @@ enum ColumnLayoutEngine {
         }
         var wrote = false
         do {
-            debugLog("[write] \(w.title) -> (\(Int(target.origin.x)),\(Int(target.origin.y))) \(Int(target.width))x\(Int(target.height))")
+            debugLog(
+                "[write] \(w.title) -> (\(Int(target.origin.x)),\(Int(target.origin.y))) \(Int(target.width))x\(Int(target.height))"
+            )
             try WindowMover.setFrame(w.axElement, to: target)
             w.positionRefusals = 0
             wrote = true
@@ -643,9 +725,7 @@ enum ColumnLayoutEngine {
     }
 
     static func isClose(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 1.0) -> Bool {
-        abs(a.origin.x - b.origin.x) < tolerance &&
-        abs(a.origin.y - b.origin.y) < tolerance &&
-        abs(a.width - b.width) < tolerance &&
-        abs(a.height - b.height) < tolerance
+        abs(a.origin.x - b.origin.x) < tolerance && abs(a.origin.y - b.origin.y) < tolerance
+            && abs(a.width - b.width) < tolerance && abs(a.height - b.height) < tolerance
     }
 }

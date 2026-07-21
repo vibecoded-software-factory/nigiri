@@ -37,7 +37,10 @@ final class WindowWatcher {
 
         let appElement = AXUIElementCreateApplication(pid)
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        for name in [kAXWindowCreatedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification, kAXFocusedWindowChangedNotification] {
+        for name in [
+            kAXWindowCreatedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification,
+            kAXFocusedWindowChangedNotification,
+        ] {
             AXObserverAddNotification(observer, appElement, name as CFString, selfPtr)
         }
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
@@ -65,7 +68,9 @@ final class WindowWatcher {
         guard let observer = observers[pid] else { return }
         guard !destructionWatched.contains(where: { CFEqual($0, window) }) else { return }
         destructionWatched.append(window)
-        AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, Unmanaged.passUnretained(self).toOpaque())
+        AXObserverAddNotification(
+            observer, window, kAXUIElementDestroyedNotification as CFString,
+            Unmanaged.passUnretained(self).toOpaque())
     }
 
     // Observers of quit apps otherwise accumulate for the process's whole

@@ -26,7 +26,7 @@ final class HotkeyListener {
     // fires listener A's id=1 action too (the overview's bare Escape was
     // triggering the main listener's focus-column-left - same id, shared
     // target). The handler now runs an action only for its OWN signature.
-    private static var nextSignature: OSType = 0x4e494700 // 'NIG\0' base
+    private static var nextSignature: OSType = 0x4e494700  // 'NIG\0' base
     private let signature: OSType
     private var actions: [UInt32: () -> Void] = [:]
     private var hotKeyRefs: [EventHotKeyRef] = []
@@ -56,8 +56,11 @@ final class HotkeyListener {
             GetEventDispatcherTarget(), 0, &hotKeyRef
         )
         guard status == noErr, let hotKeyRef else {
-            print("[hotkey] RegisterEventHotKey failed for keyCode \(keyCode) mods \(modifiers.rawValue): OSStatus \(status)"
-                + (status == eventHotKeyExistsErr ? " (already registered by macOS or another app - check System Settings > Keyboard Shortcuts)" : ""))
+            print(
+                "[hotkey] RegisterEventHotKey failed for keyCode \(keyCode) mods \(modifiers.rawValue): OSStatus \(status)"
+                    + (status == eventHotKeyExistsErr
+                        ? " (already registered by macOS or another app - check System Settings > Keyboard Shortcuts)"
+                        : ""))
             return false
         }
         actions[id] = action
@@ -80,7 +83,8 @@ final class HotkeyListener {
         // previous one - a leaked handler, permanently installed on the
         // shared dispatcher target, per overview open.
         guard eventHandler == nil else { return true }
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let status = InstallEventHandler(
             GetEventDispatcherTarget(),
@@ -96,7 +100,9 @@ final class HotkeyListener {
                 // Mod+Tab did nothing.
                 guard let userData, let event else { return OSStatus(eventNotHandledErr) }
                 var hotKeyID = EventHotKeyID()
-                let err = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+                let err = GetEventParameter(
+                    event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                    MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
                 guard err == noErr else { return OSStatus(eventNotHandledErr) }
                 // C function pointers are implicitly @Sendable; the Carbon
                 // event dispatcher delivers on the main thread, so state

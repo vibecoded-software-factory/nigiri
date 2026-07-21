@@ -72,7 +72,8 @@ final class ManagedWindow {
     // The pair is only trusted within the epoch that recorded it.
     var refusalMemo: (requested: CGRect, actual: CGRect)? {
         guard frameMemoEpoch == ColumnLayoutEngine.epoch,
-              let requested = lastRequestedFrame, let actual = lastActualFrame else { return nil }
+            let requested = lastRequestedFrame, let actual = lastActualFrame
+        else { return nil }
         return (requested, actual)
     }
     // True for windows adopted as dialogs (no close button, or fixed-size -
@@ -119,7 +120,9 @@ final class ManagedWindow {
     // niri's stable window id: assigned once, never reused, and the only
     // handle an IPC client can hold onto (an AXUIElement is not sendable and
     // a pid is not unique per window).
-    let id: UInt64 = { ManagedWindow.nextID += 1; return ManagedWindow.nextID }()
+    let id: UInt64 = {
+        ManagedWindow.nextID += 1; return ManagedWindow.nextID
+    }()
     nonisolated(unsafe) private static var nextID: UInt64 = 0
 
     init(axElement: AXUIElement, pid: pid_t, title: String) {

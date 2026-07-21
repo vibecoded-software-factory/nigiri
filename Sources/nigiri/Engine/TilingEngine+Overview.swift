@@ -57,7 +57,9 @@ extension TilingEngine {
         presentOverviewPanel(select: focusedManagedWindow())
         msgServer.broadcast("{\"event\":\"overview\",\"active\":true}")
         emitOverviewChanged(true)
-        print("overview: panel on (\(overviewRowRanges.count) workspace(s), \(overviewSelection.count) window(s))")
+        print(
+            "overview: panel on (\(overviewRowRanges.count) workspace(s), \(overviewSelection.count) window(s))"
+        )
     }
 
     // (Re)builds the thumbnail panel from the CURRENT model and shows it,
@@ -76,27 +78,37 @@ extension TilingEngine {
         // their stashed/real frame.
         let inputs: [OverviewPanel.WorkspaceInput] = rows.map { row in
             let ws = workspaces[row.wsIndex]
-            var frames = ColumnLayoutEngine.overviewFrames(columns: ws.columns, in: screenFrame,
-                                                           maximizedIndex: ws.maximizedIndex,
-                                                           viewOffset: ws.viewOffset)
+            var frames = ColumnLayoutEngine.overviewFrames(
+                columns: ws.columns, in: screenFrame,
+                maximizedIndex: ws.maximizedIndex,
+                viewOffset: ws.viewOffset)
             for fw in ws.floatingWindows {
                 // fullscreenHome before the live frame: during a fullscreen
                 // the live frame is the 1px parking spot, not where the
                 // window belongs.
-                frames.append((fw, fw.stashedFrame ?? fw.fullscreenHome
-                                    ?? WindowMover.currentFrame(fw.axElement) ?? screenFrame))
+                frames.append(
+                    (
+                        fw,
+                        fw.stashedFrame ?? fw.fullscreenHome
+                            ?? WindowMover.currentFrame(fw.axElement) ?? screenFrame
+                    ))
             }
             // overviewFrames already leaves out the windows a tabbed column
             // parks; only degenerate frames are dropped here.
-            let windows = frames
+            let windows =
+                frames
                 .filter { $0.1.width > 2 && $0.1.height > 2 }
                 .map { w, frame in
-                    (window: w, layoutFrame: frame, captureFrame: WindowMover.currentFrame(w.axElement) ?? frame)
+                    (
+                        window: w, layoutFrame: frame,
+                        captureFrame: WindowMover.currentFrame(w.axElement) ?? frame
+                    )
                 }
-            return OverviewPanel.WorkspaceInput(wsIndex: row.wsIndex,
-                                                active: row.wsIndex == activeWorkspaceIndex,
-                                                viewOffset: ws.viewOffset,
-                                                windows: windows)
+            return OverviewPanel.WorkspaceInput(
+                wsIndex: row.wsIndex,
+                active: row.wsIndex == activeWorkspaceIndex,
+                viewOffset: ws.viewOffset,
+                windows: windows)
         }
         let computed = OverviewPanel.computeRows(inputs, screenFrame: screenFrame)
         overviewSelection = computed.selection
@@ -127,9 +139,10 @@ extension TilingEngine {
             overviewPanelSignature = signature
             // Placeholder cards appear instantly; screenshots fill in as the
             // captures land, then a periodic refresh keeps live content moving.
-            overviewPanel.show(screenFrame: screenFrame, rows: computed.rows,
-                               animation: animationCurve(named: "overview-open-close"),
-                               cameraAnimation: animationCurve(named: "horizontal-view-movement"))
+            overviewPanel.show(
+                screenFrame: screenFrame, rows: computed.rows,
+                animation: animationCurve(named: "overview-open-close"),
+                cameraAnimation: animationCurve(named: "horizontal-view-movement"))
             // A rebuilt panel has empty cards. Rather than keeping a parallel
             // cache of CGImages to seed them (a copy of every frame, forever,
             // for the rare rebuild), re-send the frame each window ALREADY
@@ -160,7 +173,8 @@ extension TilingEngine {
             let generation = overviewCaptureGeneration
             WindowCapture.resolve(requests) { resolved in
                 guard generation == self.overviewCaptureGeneration,
-                      shape == self.overviewShapeGeneration else { return }
+                    shape == self.overviewShapeGeneration
+                else { return }
                 self.overviewCaptureWindows = resolved
                 self.overviewCaptureIDs = self.overviewSelection.map { $0.window.id }
                 self.startOverviewStreams(resolved)
@@ -176,7 +190,8 @@ extension TilingEngine {
     // makes the overview read as live rather than as a slideshow.
     func runOverviewCaptureLoop(generation: Int) {
         guard #available(macOS 14.0, *), isOverviewActive, overviewUsedPanel,
-              generation == overviewCaptureGeneration else { return }
+            generation == overviewCaptureGeneration
+        else { return }
         // Only what no stream is covering. On a settled overview this is
         // empty and the loop costs one timer wake-up: the streams deliver
         // when the windows actually change, which is what the loop was
@@ -189,7 +204,9 @@ extension TilingEngine {
         guard !resolved.isEmpty else {
             // Nothing to shoot: heartbeat instead of spinning. Streams are
             // covering every card.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.runOverviewCaptureLoop(generation: generation) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.runOverviewCaptureLoop(generation: generation)
+            }
             return
         }
         // The ids that were resolved WITH this map, not whatever the model
@@ -200,22 +217,25 @@ extension TilingEngine {
         // Ask for exactly the pixels the tile will show.
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2
         var sizes: [Int: CGSize] = [:]
-        let tiles = Dictionary(uniqueKeysWithValues: overviewPanel.thumbnailTargets(scale: scale).map { ($0.id, $0.size) })
+        let tiles = Dictionary(
+            uniqueKeysWithValues: overviewPanel.thumbnailTargets(scale: scale).map { ($0.id, $0.size) })
         for (slot, _) in resolved where ids.indices.contains(slot) {
             if let size = tiles[ids[slot]] { sizes[slot] = size }
         }
         WindowCapture.capture(resolved: resolved, sizes: sizes) { buffers in
             guard self.isOverviewActive, self.overviewUsedPanel,
-                  generation == self.overviewCaptureGeneration,
-                  shape == self.overviewShapeGeneration else { return }
+                generation == self.overviewCaptureGeneration,
+                shape == self.overviewShapeGeneration
+            else { return }
             for (slot, buffer) in buffers where ids.indices.contains(slot) {
                 let id = ids[slot]
                 // Retained so the surface stays valid while the layer shows
                 // it, and so a rebuilt panel can be re-seeded from it.
                 self.overviewStills[id] = buffer
                 if let surface = CVPixelBufferGetIOSurface(buffer) {
-                    self.overviewPanel.setThumbnail(unsafeBitCast(surface.takeUnretainedValue(), to: IOSurface.self),
-                                                    forWindow: id)
+                    self.overviewPanel.setThumbnail(
+                        unsafeBitCast(surface.takeUnretainedValue(), to: IOSurface.self),
+                        forWindow: id)
                 }
             }
             let cost = Date().timeIntervalSince(started)
@@ -265,7 +285,8 @@ extension TilingEngine {
     // idle it never produces a frame.
     func fillStandIns(_ selection: [(window: ManagedWindow, wsIndex: Int)]) {
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2
-        let sizes = Dictionary(uniqueKeysWithValues: overviewPanel.thumbnailTargets(scale: scale).map { ($0.id, $0.size) })
+        let sizes = Dictionary(
+            uniqueKeysWithValues: overviewPanel.thumbnailTargets(scale: scale).map { ($0.id, $0.size) })
         for entry in selection {
             let w = entry.window
             // Something that already has real pixels keeps them.
@@ -290,7 +311,8 @@ extension TilingEngine {
     func replayOverviewFrames() {
         for (id, buffer) in overviewStills {
             guard let surface = CVPixelBufferGetIOSurface(buffer) else { continue }
-            overviewPanel.setThumbnail(unsafeBitCast(surface.takeUnretainedValue(), to: IOSurface.self), forWindow: id)
+            overviewPanel.setThumbnail(
+                unsafeBitCast(surface.takeUnretainedValue(), to: IOSurface.self), forWindow: id)
         }
         if #available(macOS 14.0, *) { streamer.replay() }
     }
@@ -340,7 +362,8 @@ extension TilingEngine {
         // ScreenCaptureKit is not available at all.
         if #available(macOS 14.0, *) {
             if !WindowCapture.hasPermission(), WindowCapture.requestPermissionOnce() {
-                print("overview: Screen Recording pedido (una sola vez) - mientras tanto, iconos y documentos")
+                print(
+                    "overview: Screen Recording pedido (una sola vez) - mientras tanto, iconos y documentos")
             }
             enterOverviewPanel()
             return
@@ -373,9 +396,17 @@ extension TilingEngine {
             let count = CGFloat(row.windows.count)
             let cellWidth = (screenFrame.width - (count + 1) * gap) / count
             for (i, w) in row.windows.enumerated() {
-                targets.append((w, CGRect(x: screenFrame.minX + gap + CGFloat(i) * (cellWidth + gap), y: y, width: cellWidth, height: rowHeight)))
+                targets.append(
+                    (
+                        w,
+                        CGRect(
+                            x: screenFrame.minX + gap + CGFloat(i) * (cellWidth + gap), y: y,
+                            width: cellWidth, height: rowHeight)
+                    ))
             }
-            chips.append((y: y + 4, label: "Workspace \(row.wsIndex + 1)", active: row.wsIndex == activeWorkspaceIndex))
+            chips.append(
+                (y: y + 4, label: "Workspace \(row.wsIndex + 1)", active: row.wsIndex == activeWorkspaceIndex)
+            )
         }
         overviewChrome.show(rows: chips)
         animateFrames(targets, trackRing: false) { _ in }
@@ -415,7 +446,9 @@ extension TilingEngine {
             return
         }
         overviewKeys.unregisterAll()
-        print("overview: Escape/Enter no se pudieron reservar - modo observador (la tecla tambien llega a la app)")
+        print(
+            "overview: Escape/Enter no se pudieron reservar - modo observador (la tecla tambien llega a la app)"
+        )
         overviewKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { event in
             switch event.keyCode {
             case 53: MainActor.assumeIsolated { self.exitOverview() }
@@ -443,7 +476,9 @@ extension TilingEngine {
         // when no explicit target is given, fall back to the selected window
         // (captured before overviewSelection is cleared below).
         let selected = explicitSelection ?? (overviewUsedPanel ? overviewSelectedWindow() : nil)
-        print("overview exit -> focusing \(selected?.title ?? "(nothing)")\(explicitSelection == nil ? " (from the ring)" : " (explicit)")")
+        print(
+            "overview exit -> focusing \(selected?.title ?? "(nothing)")\(explicitSelection == nil ? " (from the ring)" : " (explicit)")"
+        )
         isOverviewActive = false
         // Next entry rebuilds from scratch: the windows will have moved.
         overviewPanelSignature = []
@@ -513,9 +548,10 @@ extension TilingEngine {
     @discardableResult
     func placeAllWindowsFromModel(trackRing: Bool = false, onDone: (() -> Void)? = nil) -> CGRect {
         let screenFrame = usableScreen().frame
-        var targets = ColumnLayoutEngine.targetFrames(columns: workspace.columns, in: screenFrame,
-                                                      maximizedIndex: workspace.maximizedIndex,
-                                                      viewOffset: workspace.viewOffset)
+        var targets = ColumnLayoutEngine.targetFrames(
+            columns: workspace.columns, in: screenFrame,
+            maximizedIndex: workspace.maximizedIndex,
+            viewOffset: workspace.viewOffset)
         // The stash is cleared in the completion, and only if the animation
         // was NOT superseded: clearing it here left a floating window
         // stranded mid-flight at overview-cell size with no return address if
@@ -585,8 +621,11 @@ extension TilingEngine {
         case "move-window-up": overviewMoveWindowInStack(-1); return true
         case "move-window-down": overviewMoveWindowInStack(1); return true
         case "move-column-to-workspace":
-            if parts.count > 1, let n = Int(parts[1]) { overviewMoveColumnToWorkspace(n) }
-            else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) { overviewMoveColumnToWorkspace(idx + 1) }
+            if parts.count > 1, let n = Int(parts[1]) {
+                overviewMoveColumnToWorkspace(n)
+            } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
+                overviewMoveColumnToWorkspace(idx + 1)
+            }
             return true
         case "move-column-to-workspace-up": overviewMoveColumnToWorkspaceRelative(-1); return true
         case "move-column-to-workspace-down": overviewMoveColumnToWorkspaceRelative(1); return true
@@ -619,7 +658,7 @@ extension TilingEngine {
         // the async destroy observer no-ops once it's already gone.
         if let loc = overviewLocateWindow(w) {
             let col = workspaces[loc.wsIndex].columns[loc.colIndex]
-            col.removeWindows {  $0 === w }
+            col.removeWindows { $0 === w }
             col.cachedHeights = nil
             if col.windows.isEmpty { _ = workspaces[loc.wsIndex].removeColumn(at: loc.colIndex) }
             // Whole-workspace normalisation, not just this column's row:
@@ -642,7 +681,8 @@ extension TilingEngine {
     func windowIsAlive(_ w: ManagedWindow) -> Bool {
         if NSRunningApplication(processIdentifier: w.pid) == nil { return false }
         var value: CFTypeRef?
-        return AXUIElementCopyAttributeValue(w.axElement, kAXRoleAttribute as CFString, &value) != .invalidUIElement
+        return AXUIElementCopyAttributeValue(w.axElement, kAXRoleAttribute as CFString, &value)
+            != .invalidUIElement
     }
 
     // Prune windows whose real window has been destroyed and rebuild the
@@ -654,7 +694,7 @@ extension TilingEngine {
         for ws in workspaces {
             for col in ws.columns {
                 let n = col.windows.count
-                col.removeWindows {  !windowIsAlive($0) }
+                col.removeWindows { !windowIsAlive($0) }
                 if col.windows.count != n {
                     removedAny = true
                     col.cachedHeights = nil
@@ -675,7 +715,8 @@ extension TilingEngine {
         // aside (relayout does this too, but the overview purges on its own).
         for ws in workspaces {
             if let full = ws.fullscreenWindow,
-               !ws.allWindows.contains(where: { $0 === full }) {
+                !ws.allWindows.contains(where: { $0 === full })
+            {
                 ws.fullscreenWindow = nil
             }
         }
@@ -709,18 +750,22 @@ extension TilingEngine {
         let selected = overviewSelection[overviewSelectedIndex]
         guard workspaces.indices.contains(selected.wsIndex) else { return }
         let ws = workspaces[selected.wsIndex]
-        guard let columnIndex = ws.columns.firstIndex(where: { column in
-            column.windows.contains { $0 === selected.window }
-        }) else { return }   // a floating window has no column to scroll to
+        guard
+            let columnIndex = ws.columns.firstIndex(where: { column in
+                column.windows.contains { $0 === selected.window }
+            })
+        else { return }  // a floating window has no column to scroll to
         let screenFrame = usableScreen().frame
         let usableWidth = screenFrame.width - 2 * ColumnLayoutEngine.gap
-        let placements = ColumnLayoutEngine.columnPlacements(columns: ws.columns,
-                                                            usableWidth: usableWidth,
-                                                            maximizedIndex: ws.maximizedIndex)
-        let offset = ColumnLayoutEngine.scrollOffset(toShow: columnIndex, placements: placements,
-                                                     currentOffset: ws.viewOffset,
-                                                     usableWidth: usableWidth,
-                                                     previousIndex: ws.focusedIndex)
+        let placements = ColumnLayoutEngine.columnPlacements(
+            columns: ws.columns,
+            usableWidth: usableWidth,
+            maximizedIndex: ws.maximizedIndex)
+        let offset = ColumnLayoutEngine.scrollOffset(
+            toShow: columnIndex, placements: placements,
+            currentOffset: ws.viewOffset,
+            usableWidth: usableWidth,
+            previousIndex: ws.focusedIndex)
         // The model's focus moves with it: the offset is computed FROM the
         // column focus came from, so leaving it behind would make the next
         // move measure against a stale one.
@@ -735,11 +780,13 @@ extension TilingEngine {
         // between cards feel heavy next to moving between real windows.
         let zoom = min(0.75, max(0.0001, OverviewPanel.zoom))
         let moved = (before - offset) * zoom
-        overviewPanel.panCamera(wsIndex: selected.wsIndex, by: moved,
-                                selected: overviewSelectedIndex,
-                                animation: animationCurve(named: "horizontal-view-movement"))
+        overviewPanel.panCamera(
+            wsIndex: selected.wsIndex, by: moved,
+            selected: overviewSelectedIndex,
+            animation: animationCurve(named: "horizontal-view-movement"))
         if let rowIndex = overviewRowBands.firstIndex(where: { $0.wsIndex == selected.wsIndex }),
-           overviewRowRanges.indices.contains(rowIndex) {
+            overviewRowRanges.indices.contains(rowIndex)
+        {
             for i in overviewRowRanges[rowIndex] where overviewBoxes.indices.contains(i) {
                 overviewBoxes[i].origin.x += moved
             }
@@ -762,7 +809,8 @@ extension TilingEngine {
         let travel = dx != 0 ? dx : dy
         guard travel != 0 else { return false }
         let zoom = min(0.75, max(0.0001, OverviewPanel.zoom))
-        let rowIndex = overviewRowBands.firstIndex { $0.band.contains(point) }
+        let rowIndex =
+            overviewRowBands.firstIndex { $0.band.contains(point) }
             ?? overviewRowRanges.firstIndex { $0.contains(overviewSelectedIndex) }
         guard let rowIndex, overviewRowBands.indices.contains(rowIndex) else { return false }
         let wsIndex = overviewRowBands[rowIndex].wsIndex
@@ -772,15 +820,16 @@ extension TilingEngine {
         let usableWidth = screenFrame.width - 2 * ColumnLayoutEngine.gap
         // How far the strip reaches, so panning cannot wander off into empty
         // space forever: half a screen past either end is as far as it goes.
-        let placements = ColumnLayoutEngine.columnPlacements(columns: ws.columns,
-                                                            usableWidth: usableWidth,
-                                                            maximizedIndex: ws.maximizedIndex)
+        let placements = ColumnLayoutEngine.columnPlacements(
+            columns: ws.columns,
+            usableWidth: usableWidth,
+            maximizedIndex: ws.maximizedIndex)
         let stripEnd = placements.map { $0.x + $0.width }.max() ?? usableWidth
         let before = ws.viewOffset
         let wanted = before - travel / zoom
         ws.viewOffset = min(max(wanted, -usableWidth / 2), max(0, stripEnd - usableWidth / 2))
         let moved = (before - ws.viewOffset) * zoom
-        guard moved != 0 else { return true }   // at the end of the strip, but still ours
+        guard moved != 0 else { return true }  // at the end of the strip, but still ours
         overviewPanel.panCamera(wsIndex: wsIndex, by: moved, selected: overviewSelectedIndex)
         // The engine's own copy of the boxes drives navigation, so it travels
         // with the panel's.
@@ -801,7 +850,8 @@ extension TilingEngine {
         let work = DispatchWorkItem {
             MainActor.assumeIsolated {
                 guard self.isOverviewActive, self.overviewUsedPanel,
-                      let w = self.overviewSelectedWindow() else { return }
+                    let w = self.overviewSelectedWindow()
+                else { return }
                 WindowMover.focus(w.axElement, pid: w.pid)
             }
         }
@@ -810,7 +860,8 @@ extension TilingEngine {
     }
 
     func overviewSelectedWindow() -> ManagedWindow? {
-        overviewSelection.indices.contains(overviewSelectedIndex) ? overviewSelection[overviewSelectedIndex].window : nil
+        overviewSelection.indices.contains(overviewSelectedIndex)
+            ? overviewSelection[overviewSelectedIndex].window : nil
     }
 
     // Point the model's focus (active workspace + column/window, or floating)
@@ -864,9 +915,11 @@ extension TilingEngine {
             w.stashedFrame = nil
             _ = ColumnLayoutEngine.applyFrame(w, target: home)
         }
-        for (w, frame) in ColumnLayoutEngine.targetFrames(columns: workspace.columns, in: screenFrame,
-                                                          maximizedIndex: workspace.maximizedIndex,
-                                                          viewOffset: workspace.viewOffset) {
+        for (w, frame) in ColumnLayoutEngine.targetFrames(
+            columns: workspace.columns, in: screenFrame,
+            maximizedIndex: workspace.maximizedIndex,
+            viewOffset: workspace.viewOffset)
+        {
             _ = ColumnLayoutEngine.applyFrame(w, target: frame)
         }
     }
@@ -877,7 +930,9 @@ extension TilingEngine {
     func overviewMoveColumn(_ delta: Int) {
         guard let sel = overviewSelectedWindow() else { return }
         for ws in workspaces {
-            guard let ci = ws.columns.firstIndex(where: { $0.windows.contains { $0 === sel } }) else { continue }
+            guard let ci = ws.columns.firstIndex(where: { $0.windows.contains { $0 === sel } }) else {
+                continue
+            }
             let newIndex = ci + delta
             guard ws.columns.indices.contains(newIndex) else { return }
             ws.swapColumns(ci, newIndex)
@@ -909,7 +964,8 @@ extension TilingEngine {
     // be on any row).
     func overviewMoveColumnToWorkspaceRelative(_ delta: Int) {
         guard let sel = overviewSelectedWindow() else { return }
-        for (wi, ws) in workspaces.enumerated() where ws.columns.contains(where: { $0.windows.contains { $0 === sel } }) {
+        for (wi, ws) in workspaces.enumerated()
+        where ws.columns.contains(where: { $0.windows.contains { $0 === sel } }) {
             overviewMoveColumnToWorkspace(wi + 1 + delta)
             return
         }
@@ -921,7 +977,9 @@ extension TilingEngine {
         guard let sel = overviewSelectedWindow() else { return }
         let targetIndex = min(max(0, number - 1), workspaces.count - 1)
         for (wi, ws) in workspaces.enumerated() {
-            guard let ci = ws.columns.firstIndex(where: { $0.windows.contains { $0 === sel } }) else { continue }
+            guard let ci = ws.columns.firstIndex(where: { $0.windows.contains { $0 === sel } }) else {
+                continue
+            }
             guard targetIndex != wi else { return }
             guard let column = ws.removeColumn(at: ci) else { return }
             workspaces[targetIndex].appendColumn(column)
@@ -943,10 +1001,10 @@ extension TilingEngine {
             // weighted so a box roughly in line is strongly preferred.
             let (primary, offAxis): (CGFloat, CGFloat)
             switch dir {
-            case .left:  guard dx < -1 else { continue }; (primary, offAxis) = (-dx, abs(dy))
-            case .right: guard dx > 1  else { continue }; (primary, offAxis) = (dx, abs(dy))
-            case .up:    guard dy < -1 else { continue }; (primary, offAxis) = (-dy, abs(dx))
-            case .down:  guard dy > 1  else { continue }; (primary, offAxis) = (dy, abs(dx))
+            case .left: guard dx < -1 else { continue }; (primary, offAxis) = (-dx, abs(dy))
+            case .right: guard dx > 1 else { continue }; (primary, offAxis) = (dx, abs(dy))
+            case .up: guard dy < -1 else { continue }; (primary, offAxis) = (-dy, abs(dx))
+            case .down: guard dy > 1 else { continue }; (primary, offAxis) = (dy, abs(dx))
             }
             let score = primary + offAxis * 2
             if score < bestScore { bestScore = score; best = i }
@@ -958,7 +1016,9 @@ extension TilingEngine {
 
     // First / last entry of the row the selection is currently in.
     func overviewSelectRowEdge(first: Bool) {
-        guard let range = overviewRowRanges.first(where: { $0.contains(overviewSelectedIndex) }) else { return }
+        guard let range = overviewRowRanges.first(where: { $0.contains(overviewSelectedIndex) }) else {
+            return
+        }
         let target = first ? range.lowerBound : range.upperBound - 1
         overviewSelectedIndex = target
         overviewPanel.setSelectedIndex(target)
@@ -969,7 +1029,9 @@ extension TilingEngine {
     // Jump to the adjacent workspace row, landing on the entry nearest in x
     // to the current selection so vertical motion feels continuous.
     func overviewJumpRow(_ delta: Int) {
-        guard let rowIdx = overviewRowRanges.firstIndex(where: { $0.contains(overviewSelectedIndex) }) else { return }
+        guard let rowIdx = overviewRowRanges.firstIndex(where: { $0.contains(overviewSelectedIndex) }) else {
+            return
+        }
         let targetRow = rowIdx + delta
         guard overviewRowRanges.indices.contains(targetRow) else { return }
         let curX = overviewBoxes[overviewSelectedIndex].midX
@@ -984,7 +1046,8 @@ extension TilingEngine {
     // Enter/Return (or a click): close the overview and jump to the selected
     // window. Escape closes without changing focus (plain exitOverview).
     func overviewConfirmSelection() {
-        guard isOverviewActive, overviewUsedPanel, overviewSelection.indices.contains(overviewSelectedIndex) else {
+        guard isOverviewActive, overviewUsedPanel, overviewSelection.indices.contains(overviewSelectedIndex)
+        else {
             exitOverview(); return
         }
         exitOverview(focusing: overviewSelection[overviewSelectedIndex].window)
@@ -1003,7 +1066,9 @@ extension TilingEngine {
             print("overview press at (\(Int(point.x)),\(Int(point.y))): no card there")
             return
         }
-        print("overview press at (\(Int(point.x)),\(Int(point.y))) -> card \(idx) (\(overviewSelection.indices.contains(idx) ? overviewSelection[idx].window.title : "?"))")
+        print(
+            "overview press at (\(Int(point.x)),\(Int(point.y))) -> card \(idx) (\(overviewSelection.indices.contains(idx) ? overviewSelection[idx].window.title : "?"))"
+        )
         overviewDragIndex = idx
         // By identity too: the index is a position into overviewSelection,
         // and that list is rebuilt mid-drag by design (an AX notification
@@ -1044,7 +1109,8 @@ extension TilingEngine {
         // the whole window manager; bounds-checking it stopped the crash but
         // left it pointing at whatever now sits in that slot.
         guard let dragged = overviewDragWindow,
-              overviewSelection.contains(where: { $0.window === dragged }) else {
+            overviewSelection.contains(where: { $0.window === dragged })
+        else {
             overviewPanel.endCardDrag()
             presentOverviewPanel(select: overviewSelectedWindow())
             return
@@ -1089,7 +1155,11 @@ extension TilingEngine {
             y < b.minY ? b.minY - y : (y > b.maxY ? y - b.maxY : 0)
         }
         // Nearest workspace row (forgiving off-row).
-        guard let ri = overviewRowRanges.indices.min(by: { vDist(point.y, band(overviewRowRanges[$0])) < vDist(point.y, band(overviewRowRanges[$1])) }) else { return nil }
+        guard
+            let ri = overviewRowRanges.indices.min(by: {
+                vDist(point.y, band(overviewRowRanges[$0])) < vDist(point.y, band(overviewRowRanges[$1]))
+            })
+        else { return nil }
         let range = overviewRowRanges[ri]
         let (rowMinY, rowMaxY) = band(range)
 
@@ -1097,11 +1167,14 @@ extension TilingEngine {
         // each column's tiles sorted top->bottom.
         var byX: [Int: [Int]] = [:]
         for e in range { byX[Int((overviewBoxes[e].minX / 2).rounded()), default: []].append(e) }
-        let cols = byX.keys.sorted().map { k in byX[k]!.sorted { overviewBoxes[$0].minY < overviewBoxes[$1].minY } }
+        let cols = byX.keys.sorted().map { k in
+            byX[k]!.sorted { overviewBoxes[$0].minY < overviewBoxes[$1].minY }
+        }
         guard !cols.isEmpty else { return nil }
         let colBox = cols.map { c -> CGRect in
             let bs = c.map { overviewBoxes[$0] }
-            let minX = bs.map { $0.minX }.min()!, maxX = bs.map { $0.maxX }.max()!
+            let minX = bs.map { $0.minX }.min()!
+            let maxX = bs.map { $0.maxX }.max()!
             return CGRect(x: minX, y: rowMinY, width: maxX - minX, height: rowMaxY - rowMinY)
         }
 
@@ -1109,7 +1182,9 @@ extension TilingEngine {
         var colGapX: [CGFloat] = [colBox[0].minX]
         for i in 1..<colBox.count { colGapX.append((colBox[i - 1].maxX + colBox[i].minX) / 2) }
         colGapX.append(colBox.last!.maxX)
-        let (gapIdx, gapX) = colGapX.enumerated().min(by: { abs($0.element - point.x) < abs($1.element - point.x) })!
+        let (gapIdx, gapX) = colGapX.enumerated().min(by: {
+            abs($0.element - point.x) < abs($1.element - point.x)
+        })!
         let vertDist = abs(gapX - point.x)
 
         // Hovered column, and its nearest BETWEEN-tiles gap. A point PAST
@@ -1127,7 +1202,9 @@ extension TilingEngine {
         var tileGapY: [CGFloat] = [tiles[0].minY]
         for j in 1..<tiles.count { tileGapY.append((tiles[j - 1].maxY + tiles[j].minY) / 2) }
         tileGapY.append(tiles.last!.maxY)
-        let (tileIdx, tileY) = tileGapY.enumerated().min(by: { abs($0.element - point.y) < abs($1.element - point.y) })!
+        let (tileIdx, tileY) = tileGapY.enumerated().min(by: {
+            abs($0.element - point.y) < abs($1.element - point.y)
+        })!
         let horDist = abs(tileY - point.y)
 
         // Slim insertion bars: full-length along the gap so you see WHERE,
@@ -1135,14 +1212,21 @@ extension TilingEngine {
         let thickness: CGFloat = 14
         if vertDist <= horDist {
             // New column: a tall thin bar at the column gap, full row height.
-            let hint = CGRect(x: gapX - thickness / 2, y: rowMinY, width: thickness, height: rowMaxY - rowMinY)
-            let anchor = gapIdx < cols.count ? overviewSelection[cols[gapIdx][0]].window : overviewSelection[cols[cols.count - 1][0]].window
+            let hint = CGRect(
+                x: gapX - thickness / 2, y: rowMinY, width: thickness, height: rowMaxY - rowMinY)
+            let anchor =
+                gapIdx < cols.count
+                ? overviewSelection[cols[gapIdx][0]].window
+                : overviewSelection[cols[cols.count - 1][0]].window
             return (.newColumn(anchor: anchor, after: gapIdx >= cols.count), hint)
         } else {
             // Stack: a wide thin bar across the column at the tile gap.
             let cb = colBox[colIdx]
             let hint = CGRect(x: cb.minX, y: tileY - thickness / 2, width: cb.width, height: thickness)
-            let anchor = tileIdx == 0 ? overviewSelection[cols[colIdx][0]].window : overviewSelection[cols[colIdx][tileIdx - 1]].window
+            let anchor =
+                tileIdx == 0
+                ? overviewSelection[cols[colIdx][0]].window
+                : overviewSelection[cols[colIdx][tileIdx - 1]].window
             return (.intoStack(anchor: anchor, below: tileIdx != 0), hint)
         }
     }

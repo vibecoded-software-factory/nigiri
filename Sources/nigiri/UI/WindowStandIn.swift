@@ -43,7 +43,9 @@ enum WindowStandIn {
     // implement it (iTerm2, terminals in general, browsers) return nil, and
     // full-screen or tabbed documents are missing it even in apps that do.
     static func documentURL(of window: ManagedWindow) -> URL? {
-        guard let path: String = AX.attribute(window.axElement, kAXDocumentAttribute as String) else { return nil }
+        guard let path: String = AX.attribute(window.axElement, kAXDocumentAttribute as String) else {
+            return nil
+        }
         if path.hasPrefix("file://") { return URL(string: path) }
         return path.hasPrefix("/") ? URL(fileURLWithPath: path) : nil
     }
@@ -66,7 +68,8 @@ enum WindowStandIn {
                 MainActor.assumeIsolated {
                     pendingDocuments.remove(key)
                     guard let representation else { return }
-                    let image = NSImage(cgImage: representation.cgImage, size: representation.contentRect.size)
+                    let image = NSImage(
+                        cgImage: representation.cgImage, size: representation.contentRect.size)
                     documentCache[key] = image
                     completion(image)
                 }

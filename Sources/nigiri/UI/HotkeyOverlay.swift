@@ -26,7 +26,8 @@ final class HotkeyOverlay {
     // states, it never explains.
     init(bindings: [(combo: String, action: String)]) {
         let comboWidth = bindings.map { $0.combo.count }.max() ?? 0
-        let text = bindings
+        let text =
+            bindings
             .map { $0.combo.padding(toLength: comboWidth + 3, withPad: " ", startingAt: 0) + $0.action }
             .joined(separator: "\n")
 
@@ -37,10 +38,10 @@ final class HotkeyOverlay {
         label.sizeToFit()
         let textSize = label.frame.size
 
-        let textPad: CGFloat = 20       // padding inside the scrolled text
-        let margin: CGFloat = 4         // gap so the purple border stays visible
+        let textPad: CGFloat = 20  // padding inside the scrolled text
+        let margin: CGFloat = 4  // gap so the purple border stays visible
         let screenHeight = NSScreen.screens.first?.visibleFrame.height ?? 800
-        let maxHeight = screenHeight * 0.6   // compact - scroll for the rest
+        let maxHeight = screenHeight * 0.6  // compact - scroll for the rest
         let fullTextHeight = textSize.height + 2 * textPad
         let scrolls = fullTextHeight + 2 * margin > maxHeight
         let scrollerRoom: CGFloat = scrolls ? 16 : 0
@@ -60,14 +61,18 @@ final class HotkeyOverlay {
         // nigiri's own UI, never a focused window, and wearing the focus
         // colour made it read as permanently selected (reported live). Same
         // grey as the inactive-window border.
-        container.layer?.borderColor = NSColor(calibratedRed: 0x58 / 255.0, green: 0x5B / 255.0, blue: 0x70 / 255.0, alpha: 1).cgColor
+        container.layer?.borderColor =
+            NSColor(calibratedRed: 0x58 / 255.0, green: 0x5B / 255.0, blue: 0x70 / 255.0, alpha: 1).cgColor
         container.layer?.masksToBounds = true
 
-        let documentView = NSView(frame: CGRect(x: 0, y: 0, width: textSize.width + 2 * textPad, height: fullTextHeight))
+        let documentView = NSView(
+            frame: CGRect(x: 0, y: 0, width: textSize.width + 2 * textPad, height: fullTextHeight))
         label.frame = CGRect(x: textPad, y: textPad, width: textSize.width, height: textSize.height)
         documentView.addSubview(label)
 
-        let scrollView = NSScrollView(frame: CGRect(x: margin, y: margin, width: panelWidth - 2 * margin, height: panelHeight - 2 * margin))
+        let scrollView = NSScrollView(
+            frame: CGRect(
+                x: margin, y: margin, width: panelWidth - 2 * margin, height: panelHeight - 2 * margin))
         scrollView.documentView = documentView
         scrollView.hasVerticalScroller = scrolls
         scrollView.scrollerStyle = .overlay
@@ -76,7 +81,9 @@ final class HotkeyOverlay {
         scrollView.verticalScrollElasticity = .allowed
         container.addSubview(scrollView)
 
-        window = KeyablePanelWindow(contentRect: CGRect(x: 0, y: 0, width: panelWidth, height: panelHeight), styleMask: [.borderless], backing: .buffered, defer: false)
+        window = KeyablePanelWindow(
+            contentRect: CGRect(x: 0, y: 0, width: panelWidth, height: panelHeight), styleMask: [.borderless],
+            backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
@@ -96,7 +103,8 @@ final class HotkeyOverlay {
         // Start scrolled to the TOP (unflipped document: top is max-y)
         // rather than wherever the last frame left it.
         if let scroll = window.contentView?.subviews.compactMap({ $0 as? NSScrollView }).first,
-           let doc = scroll.documentView {
+            let doc = scroll.documentView
+        {
             doc.scroll(NSPoint(x: 0, y: doc.frame.height))
         }
         // Take focus so Escape and the scroller keyboard keys work.
@@ -105,7 +113,7 @@ final class HotkeyOverlay {
         // Escape closes; every other key falls through to the scroll view.
         // Local monitor (not global): only fires while OUR panel is key.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            if event.keyCode == 53 { self?.hide(); return nil } // Escape
+            if event.keyCode == 53 { self?.hide(); return nil }  // Escape
             return event
         }
     }

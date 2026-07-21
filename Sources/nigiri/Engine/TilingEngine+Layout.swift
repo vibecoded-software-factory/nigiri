@@ -19,9 +19,10 @@ extension TilingEngine {
     }
 
     static func dialogLikeAccessoryWindow(_ w: AXUIElement) -> Bool {
-        isDialogLike(title: AX.attribute(w, kAXTitleAttribute as String) ?? "",
-                     hasDefaultButton: AX.hasAttribute(w, kAXDefaultButtonAttribute as String),
-                     hasCancelButton: AX.hasAttribute(w, kAXCancelButtonAttribute as String))
+        isDialogLike(
+            title: AX.attribute(w, kAXTitleAttribute as String) ?? "",
+            hasDefaultButton: AX.hasAttribute(w, kAXDefaultButtonAttribute as String),
+            hasCancelButton: AX.hasAttribute(w, kAXCancelButtonAttribute as String))
     }
 
     func collectCurrentAXWindows() -> [(AXUIElement, pid_t, String, CollectedKind)] {
@@ -53,7 +54,9 @@ extension TilingEngine {
             // column, and half of them refuse to be moved anyway.
             let isAccessory = app.activationPolicy == .accessory
             guard app.activationPolicy == .regular || isAccessory else {
-                debugLog("[collect] skip pid \(app.processIdentifier) (\(app.localizedName ?? "?")): activationPolicy \(app.activationPolicy.rawValue)")
+                debugLog(
+                    "[collect] skip pid \(app.processIdentifier) (\(app.localizedName ?? "?")): activationPolicy \(app.activationPolicy.rawValue)"
+                )
                 continue
             }
             // Never our own windows: the ring, the borders, the overview panel
@@ -67,14 +70,18 @@ extension TilingEngine {
             // enough: BluetoothUIServer reports .regular while its dialog is
             // up, which is how a "Bluetooth" card ended up as a column.
             if let bundleID = app.bundleIdentifier,
-               Self.systemUIAgentBundleIDs.contains(where: { bundleID.hasPrefix($0) }) {
+                Self.systemUIAgentBundleIDs.contains(where: { bundleID.hasPrefix($0) })
+            {
                 debugLog("[collect] skip \(app.localizedName ?? "?"): agente de UI del sistema (\(bundleID))")
                 continue
             }
             guard let name = app.localizedName,
-                  !neverTile.contains(where: { name.localizedCaseInsensitiveContains($0) }),
-                  tileAll || watchedAppNames.contains(where: { name.localizedCaseInsensitiveContains($0) }) else {
-                debugLog("[collect] skip pid \(app.processIdentifier) (\(app.localizedName ?? "?")): not watched / never-tile")
+                !neverTile.contains(where: { name.localizedCaseInsensitiveContains($0) }),
+                tileAll || watchedAppNames.contains(where: { name.localizedCaseInsensitiveContains($0) })
+            else {
+                debugLog(
+                    "[collect] skip pid \(app.processIdentifier) (\(app.localizedName ?? "?")): not watched / never-tile"
+                )
                 continue
             }
             guard let axWindows = AX.windows(ofPid: app.processIdentifier) else {
@@ -94,10 +101,14 @@ extension TilingEngine {
                 // a window that genuinely changes shape (a dialog that
                 // becomes resizable) is still reclassified.
                 if let known = knownWindow(for: w),
-                   Date().timeIntervalSince(known.lastFullProbe) < 3 {
+                    Date().timeIntervalSince(known.lastFullProbe) < 3
+                {
                     let title: String = AX.attribute(w, kAXTitleAttribute as String) ?? known.title
-                    result.append((w, app.processIdentifier, title.isEmpty ? known.title : title,
-                                   (isAccessory || known.isDialog) ? .dialog : .tiled))
+                    result.append(
+                        (
+                            w, app.processIdentifier, title.isEmpty ? known.title : title,
+                            (isAccessory || known.isDialog) ? .dialog : .tiled
+                        ))
                     watcher.watchForDestruction(w, pid: app.processIdentifier)
                     continue
                 }
@@ -114,7 +125,7 @@ extension TilingEngine {
                 // known-transient subroles rather than an allow-list.
                 let subrole: String? = AX.attribute(w, kAXSubroleAttribute as String)
                 let nonTileableSubroles: Set<String> = [
-                    kAXFloatingWindowSubrole, kAXSystemFloatingWindowSubrole, kAXSystemDialogSubrole
+                    kAXFloatingWindowSubrole, kAXSystemFloatingWindowSubrole, kAXSystemDialogSubrole,
                 ]
                 if let subrole, nonTileableSubroles.contains(subrole) {
                     debugLog("[collect] skip \(name) window: transient subrole \(subrole)")
@@ -161,8 +172,12 @@ extension TilingEngine {
                 } else {
                     // No close button = transient/parented, niri's "windows
                     // with a parent (usually dialogs) open as floating".
-                    guard subrole == kAXDialogSubrole || (subrole == kAXStandardWindowSubrole && !title.isEmpty) else {
-                        debugLog("[collect] skip \(name) \"\(title)\": no close button, subrole \(subrole ?? "nil")")
+                    guard
+                        subrole == kAXDialogSubrole || (subrole == kAXStandardWindowSubrole && !title.isEmpty)
+                    else {
+                        debugLog(
+                            "[collect] skip \(name) \"\(title)\": no close button, subrole \(subrole ?? "nil")"
+                        )
                         continue
                     }
                     // ...EXCEPT a chrome-less real window (Alacritty with
@@ -175,13 +190,16 @@ extension TilingEngine {
                     // buttons: file panels expose AXDefaultButton/
                     // AXCancelButton (Open/Cancel), a chrome-less terminal
                     // exposes neither.
-                    let hasCommitButtons = AX.hasAttribute(w, kAXDefaultButtonAttribute as String)
+                    let hasCommitButtons =
+                        AX.hasAttribute(w, kAXDefaultButtonAttribute as String)
                         || AX.hasAttribute(w, kAXCancelButtonAttribute as String)
                     if subrole == kAXStandardWindowSubrole,
-                       AX.isSettable(w, kAXPositionAttribute as String),
-                       AX.isSettable(w, kAXSizeAttribute as String),
-                       !hasCommitButtons {
-                        result.append((w, app.processIdentifier, title.isEmpty ? "(no title)" : title, .tiled))
+                        AX.isSettable(w, kAXPositionAttribute as String),
+                        AX.isSettable(w, kAXSizeAttribute as String),
+                        !hasCommitButtons
+                    {
+                        result.append(
+                            (w, app.processIdentifier, title.isEmpty ? "(no title)" : title, .tiled))
                     } else {
                         result.append((w, app.processIdentifier, title.isEmpty ? "(dialog)" : title, .dialog))
                     }
@@ -202,28 +220,35 @@ extension TilingEngine {
     // cross-app switches specifically.
     func syncFocusIndex() {
         guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              let focusedElement = AX.focusedWindow(ofPid: frontApp.processIdentifier) else { return }
+            let focusedElement = AX.focusedWindow(ofPid: frontApp.processIdentifier)
+        else { return }
         syncFocusIndex(focusedElement: focusedElement)
     }
 
     func syncFocusIndex(focusedElement: AXUIElement) {
-        if let idx = workspace.columns.firstIndex(where: { col in col.windows.contains { CFEqual($0.axElement, focusedElement) } }) {
+        if let idx = workspace.columns.firstIndex(where: { col in
+            col.windows.contains { CFEqual($0.axElement, focusedElement) }
+        }) {
             // Real focus decides which group is active, not just which
             // column - clicking a tiled window while a floating dialog had
             // focus must move the ring (and all navigation) back to tiling.
             workspace.isFloatingActive = false
             workspace.focus(column: idx)
-            if let windowIdx = workspace.columns[idx].windows.firstIndex(where: { CFEqual($0.axElement, focusedElement) }) {
+            if let windowIdx = workspace.columns[idx].windows.firstIndex(where: {
+                CFEqual($0.axElement, focusedElement)
+            }) {
                 workspace.columns[idx].focus(row: windowIdx)
             }
-            debugLog("[focus-sync] focusedIndex -> \(idx) (\(workspace.columns[idx].windows.first?.title ?? "?"))")
-        } else if let fidx = workspace.floatingWindows.firstIndex(where: { CFEqual($0.axElement, focusedElement) }) {
+            debugLog(
+                "[focus-sync] focusedIndex -> \(idx) (\(workspace.columns[idx].windows.first?.title ?? "?"))")
+        } else if let fidx = workspace.floatingWindows.firstIndex(where: {
+            CFEqual($0.axElement, focusedElement)
+        }) {
             workspace.isFloatingActive = true
             workspace.focus(floating: fidx)
             debugLog("[focus-sync] floating focus -> \(fidx) (\(workspace.floatingWindows[fidx].title))")
         }
     }
-
 
     // Where focus lands when it has nowhere better to go: the nearest
     // column (scanning outward from `index`) containing at least one window
@@ -240,12 +265,15 @@ extension TilingEngine {
         let onScreen = ScreenGeometry.onScreenWindowBoundsByPid()
         func columnVisible(_ column: Column) -> Bool {
             column.windows.contains { w in
-                guard let bounds = onScreen[w.pid], let frame = WindowMover.currentFrame(w.axElement) else { return false }
+                guard let bounds = onScreen[w.pid], let frame = WindowMover.currentFrame(w.axElement) else {
+                    return false
+                }
                 return bounds.contains { ColumnLayoutEngine.isClose($0, frame, tolerance: 5) }
             }
         }
         for offset in 0..<workspace.columns.count {
-            for candidate in [clamped - offset, clamped + offset] where workspace.columns.indices.contains(candidate) {
+            for candidate in [clamped - offset, clamped + offset]
+            where workspace.columns.indices.contains(candidate) {
                 if columnVisible(workspace.columns[candidate]) { return candidate }
             }
         }
@@ -267,7 +295,9 @@ extension TilingEngine {
         // index: closing a column to the LEFT of the focused one shifted
         // every later index down, and a plain clamp then silently
         // re-pointed focus at whatever column slid into the old number.
-        let previouslyFocusedColumn = workspace.columns.indices.contains(workspace.focusedIndex) ? workspace.columns[workspace.focusedIndex] : nil
+        let previouslyFocusedColumn =
+            workspace.columns.indices.contains(workspace.focusedIndex)
+            ? workspace.columns[workspace.focusedIndex] : nil
         rebuildElementIndex()
         let current = collectCurrentAXWindows()
         if let t0 {
@@ -310,8 +340,9 @@ extension TilingEngine {
         // absent forever and dies a couple of passes later, while a live
         // window reappears on the very next scan and resets the count.
         func isWindowDead(_ known: ManagedWindow) -> Bool {
-            let (scans, dead) = TilingEngine.purgeVerdict(scans: known.absentFromAppListScans,
-                                                         verdict: isElementDead(known.axElement, pid: known.pid))
+            let (scans, dead) = TilingEngine.purgeVerdict(
+                scans: known.absentFromAppListScans,
+                verdict: isElementDead(known.axElement, pid: known.pid))
             known.absentFromAppListScans = scans
             return dead
         }
@@ -372,7 +403,8 @@ extension TilingEngine {
             // every relayout and get folded back into a tiled column below.
             ws.floatingWindows.removeAll { known in
                 guard !current.contains(where: { CFEqual($0.0, known.axElement) }),
-                      isWindowDead(known) else { return false }
+                    isWindowDead(known)
+                else { return false }
                 closed.append(known)
                 return true
             }
@@ -450,7 +482,9 @@ extension TilingEngine {
             for window in ws.tiledWindows where window.isDialog && probedTileable(window) {
                 window.isDialog = false
             }
-            let promotable = ws.floatingWindows.filter { $0.isDialog && $0.autoFloatedAsDialog && probedTileable($0) }
+            let promotable = ws.floatingWindows.filter {
+                $0.isDialog && $0.autoFloatedAsDialog && probedTileable($0)
+            }
             guard !promotable.isEmpty else { continue }
             ws.floatingWindows.removeAll { w in promotable.contains { $0 === w } }
             ws.focus(floating: ws.floatingFocusedIndex)
@@ -477,7 +511,8 @@ extension TilingEngine {
         // window parked off-screen forever, with no decorations.
         for ws in workspaces {
             if let full = ws.fullscreenWindow,
-               !ws.allWindows.contains(where: { $0 === full }) {
+                !ws.allWindows.contains(where: { $0 === full })
+            {
                 ws.fullscreenWindow = nil
             }
         }
@@ -510,7 +545,9 @@ extension TilingEngine {
             // system popup, a helper's stray panel) the FIRST question is
             // always "who owns it", and reproducing a transient popup on
             // demand to answer that is not always possible.
-            print("[adopt] \(appName) [\(app?.bundleIdentifier ?? "sin bundle id")] \"\(title)\" \(kind == .dialog ? "flotante" : "tileada")")
+            print(
+                "[adopt] \(appName) [\(app?.bundleIdentifier ?? "sin bundle id")] \"\(title)\" \(kind == .dialog ? "flotante" : "tileada")"
+            )
             let rule = matchingWindowRule(appName: appName, bundleID: app?.bundleIdentifier, title: title)
             let window = ManagedWindow(axElement: element, pid: pid, title: title)
             window.isDialog = kind == .dialog
@@ -534,14 +571,16 @@ extension TilingEngine {
             func applyOpenState() {
                 guard !isInitialAdoption else { return }
                 if shouldFloat, let pos = rule?.defaultFloatingPosition,
-                   let f = WindowMover.currentFrame(element) {
+                    let f = WindowMover.currentFrame(element)
+                {
                     window.stashedFrame = CGRect(origin: pos, size: f.size)
                     try? WindowMover.setPosition(element, to: pos)
                 }
                 if rule?.openFullscreen == true {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         MainActor.assumeIsolated {
-                            _ = AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, true as CFBoolean)
+                            _ = AXUIElementSetAttributeValue(
+                                element, "AXFullScreen" as CFString, true as CFBoolean)
                         }
                     }
                 }
@@ -551,9 +590,12 @@ extension TilingEngine {
             // one. By number, or by named workspace (resolved to its slot).
             // Skipped during initial adoption (cataloguing an existing
             // session shouldn't teleport windows around).
-            let ruledWorkspace = rule?.openOnWorkspace
+            let ruledWorkspace =
+                rule?.openOnWorkspace
                 ?? rule?.openOnWorkspaceName.flatMap { workspaceIndex(named: $0).map { $0 + 1 } }
-            if let wsNumber = ruledWorkspace, wsNumber >= 1, wsNumber - 1 != activeWorkspaceIndex, !isInitialAdoption {
+            if let wsNumber = ruledWorkspace, wsNumber >= 1, wsNumber - 1 != activeWorkspaceIndex,
+                !isInitialAdoption
+            {
                 while workspaces.count <= wsNumber - 1 { workspaces.append(Workspace()) }
                 let target = workspaces[wsNumber - 1]
                 if shouldFloat {
@@ -568,7 +610,10 @@ extension TilingEngine {
                 }
                 if let frame = WindowMover.currentFrame(element) {
                     window.stashedFrame = frame
-                    _ = ColumnLayoutEngine.applyFrame(window, target: parkedOffScreen(frame, screenFrame: ScreenGeometry.primaryScreenVisibleFrameInAXSpace()))
+                    _ = ColumnLayoutEngine.applyFrame(
+                        window,
+                        target: parkedOffScreen(
+                            frame, screenFrame: ScreenGeometry.primaryScreenVisibleFrameInAXSpace()))
                 }
                 applyOpenState()
                 print("window-rule: \(window.title) -> workspace \(wsNumber)")
@@ -593,7 +638,9 @@ extension TilingEngine {
                 if isInitialAdoption {
                     workspace.appendColumn(c)
                 } else {
-                    let insertAt = workspace.columns.isEmpty ? 0 : min(workspace.focusedIndex + 1, workspace.columns.count)
+                    let insertAt =
+                        workspace.columns.isEmpty
+                        ? 0 : min(workspace.focusedIndex + 1, workspace.columns.count)
                     // activating: focusing it separately would clear the
                     // "closing this one hands focus back left" memory that
                     // inserting right of the focus just recorded.
@@ -631,14 +678,15 @@ extension TilingEngine {
             if !anyWritable {
                 if !warnedDeadAccessibilityGrant {
                     warnedDeadAccessibilityGrant = true
-                    print("""
-                    ERROR: every managed window refuses position writes - this process's \
-                    Accessibility grant is dead (typically: the binary was rebuilt, which \
-                    invalidates the signature TCC tied the grant to, and tccd caches the \
-                    denial for this process's lifetime). Restart nigiri; if it persists, \
-                    toggle nigiri off and on in System Settings > Privacy & Security > \
-                    Accessibility.
-                    """)
+                    print(
+                        """
+                        ERROR: every managed window refuses position writes - this process's \
+                        Accessibility grant is dead (typically: the binary was rebuilt, which \
+                        invalidates the signature TCC tied the grant to, and tccd caches the \
+                        denial for this process's lifetime). Restart nigiri; if it persists, \
+                        toggle nigiri off and on in System Settings > Privacy & Security > \
+                        Accessibility.
+                        """)
                 }
             } else {
                 warnedDeadAccessibilityGrant = false
@@ -652,7 +700,9 @@ extension TilingEngine {
         // and then it falls to the nearest column the user can SEE.
         if focusNewColumn {
             // adoption already pointed focusedIndex at the new column
-        } else if let prev = previouslyFocusedColumn, let idx = workspace.columns.firstIndex(where: { $0 === prev }) {
+        } else if let prev = previouslyFocusedColumn,
+            let idx = workspace.columns.firstIndex(where: { $0 === prev })
+        {
             workspace.focus(column: idx)
         } else {
             workspace.focus(column: nearestVisiblyOccupiedColumnIndex(from: workspace.focusedIndex))
@@ -693,10 +743,12 @@ extension TilingEngine {
             // relayout exists to correct, and the memo would still claim it
             // is where we left it. Two AX reads per window, versus a full
             // spring animation of every window.
-            let allInPlace = !wanted.isEmpty && wanted.allSatisfy { entry in
-                guard let actual = WindowMover.currentFrame(entry.window.axElement) else { return false }
-                return ColumnLayoutEngine.isClose(actual, entry.frame, tolerance: 2)
-            }
+            let allInPlace =
+                !wanted.isEmpty
+                && wanted.allSatisfy { entry in
+                    guard let actual = WindowMover.currentFrame(entry.window.axElement) else { return false }
+                    return ColumnLayoutEngine.isClose(actual, entry.frame, tolerance: 2)
+                }
             if allInPlace {
                 updateRing()
                 return
@@ -722,13 +774,18 @@ extension TilingEngine {
         // empty: a workspace holding only dialogs announced itself as having
         // no windows at all.
         if workspace.allWindows.isEmpty {
-            print("no windows found yet for: \(tileAll ? "all apps" : watchedAppNames.joined(separator: ", "))")
+            print(
+                "no windows found yet for: \(tileAll ? "all apps" : watchedAppNames.joined(separator: ", "))")
         } else if managed.isEmpty {
             print("tiled 0 column(s): \(workspace.floatingWindows.count) flotante(s)")
         } else {
-            print("tiled \(workspace.columns.count) column(s): \(managed.map { $0.title }.joined(separator: ", "))")
+            print(
+                "tiled \(workspace.columns.count) column(s): \(managed.map { $0.title }.joined(separator: ", "))"
+            )
         }
-        msgServer.broadcast("{\"event\":\"layout\",\"workspace\":\(activeWorkspaceIndex + 1),\"columns\":\(workspace.columns.count)}")
+        msgServer.broadcast(
+            "{\"event\":\"layout\",\"workspace\":\(activeWorkspaceIndex + 1),\"columns\":\(workspace.columns.count)}"
+        )
         broadcastWindowDiff()
         if let t0 {
             let ms = Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1_000_000
@@ -765,13 +822,15 @@ extension TilingEngine {
         // fire mid-transition, folding mid-stash windows into the wrong
         // workspace and superseding the switch's animation. Overview mode
         // defers identically - the model is deliberately scattered.
-        let work = DispatchWorkItem { MainActor.assumeIsolated {
-            if self.isTransitioningWorkspace || (self.isOverviewActive && self.overviewDragIndex != nil) {
-                self.relayoutQueuedDuringTransition = true
-            } else {
-                self.relayout()
+        let work = DispatchWorkItem {
+            MainActor.assumeIsolated {
+                if self.isTransitioningWorkspace || (self.isOverviewActive && self.overviewDragIndex != nil) {
+                    self.relayoutQueuedDuringTransition = true
+                } else {
+                    self.relayout()
+                }
             }
-        } }
+        }
         pendingRelayout = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
@@ -790,7 +849,8 @@ extension TilingEngine {
         guard frameAnimationTimer == nil else {
             watcher.applyingLayout {
                 if let full = fullscreenWindowRef {
-                    _ = ColumnLayoutEngine.applyFrame(full, target: ScreenGeometry.primaryScreenVisibleFrameInAXSpace())
+                    _ = ColumnLayoutEngine.applyFrame(
+                        full, target: ScreenGeometry.primaryScreenVisibleFrameInAXSpace())
                 }
             }
             return false
@@ -801,7 +861,8 @@ extension TilingEngine {
         // the strip (grantedX, 1px in).
         if let full = fullscreenWindowRef {
             watcher.applyingLayout {
-                _ = ColumnLayoutEngine.applyFrame(full, target: ScreenGeometry.primaryScreenVisibleFrameInAXSpace())
+                _ = ColumnLayoutEngine.applyFrame(
+                    full, target: ScreenGeometry.primaryScreenVisibleFrameInAXSpace())
                 for w in workspace.allWindows where w !== full {
                     guard let current = WindowMover.currentFrame(w.axElement) else { continue }
                     // Floating windows are never re-laid-out by the tiling
@@ -810,10 +871,12 @@ extension TilingEngine {
                     // first time, or the second pass saves the parking spot.
                     if let home = FullscreenStash.homeToRecord(
                         isFloating: workspace.floatingWindows.contains { $0 === w },
-                        existingHome: w.fullscreenHome, currentFrame: current) {
+                        existingHome: w.fullscreenHome, currentFrame: current)
+                    {
                         w.fullscreenHome = home
                     }
-                    _ = ColumnLayoutEngine.applyFrame(w, target: FullscreenStash.parked(current, screenFrame: screenFrame))
+                    _ = ColumnLayoutEngine.applyFrame(
+                        w, target: FullscreenStash.parked(current, screenFrame: screenFrame))
                 }
             }
             // Nothing to discover on this path: the fullscreen window takes
@@ -824,7 +887,9 @@ extension TilingEngine {
         }
         var discovered = false
         watcher.applyingLayout {
-            discovered = ColumnLayoutEngine.layout(columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex, viewOffset: workspace.viewOffset, skipping: fullscreenWindowRef)
+            discovered = ColumnLayoutEngine.layout(
+                columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex,
+                viewOffset: workspace.viewOffset, skipping: fullscreenWindowRef)
         }
         return discovered
     }
@@ -840,16 +905,24 @@ extension TilingEngine {
     // authoritative settle). It must never be silently dropped: the
     // workspace-switch curtain waits on it to reveal the screen.
     func reflow(explicitViewOffset: CGFloat? = nil, onSettled: (() -> Void)? = nil) {
-        debugLog("[reflow] focusedIndex=\(workspace.focusedIndex) viewOffset=\(Int(workspace.viewOffset)) transitioning=\(isTransitioningWorkspace)")
+        debugLog(
+            "[reflow] focusedIndex=\(workspace.focusedIndex) viewOffset=\(Int(workspace.viewOffset)) transitioning=\(isTransitioningWorkspace)"
+        )
         let (screenFrame, usableWidth) = usableScreen()
         var targetOffset = explicitViewOffset ?? workspace.viewOffset
         if explicitViewOffset == nil, workspace.columns.indices.contains(workspace.focusedIndex) {
-            let placements = ColumnLayoutEngine.columnPlacements(columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
-            targetOffset = ColumnLayoutEngine.scrollOffset(toShow: workspace.focusedIndex, placements: placements, currentOffset: workspace.viewOffset, usableWidth: usableWidth, previousIndex: lastReflowedColumnIndex)
+            let placements = ColumnLayoutEngine.columnPlacements(
+                columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex
+            )
+            targetOffset = ColumnLayoutEngine.scrollOffset(
+                toShow: workspace.focusedIndex, placements: placements, currentOffset: workspace.viewOffset,
+                usableWidth: usableWidth, previousIndex: lastReflowedColumnIndex)
         }
         lastReflowedColumnIndex = workspace.focusedIndex
         workspace.viewOffset = targetOffset
-        var targets = ColumnLayoutEngine.targetFrames(columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex, viewOffset: targetOffset)
+        var targets = ColumnLayoutEngine.targetFrames(
+            columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex,
+            viewOffset: targetOffset)
         // niri's windowed fullscreen: this ONE window covers the raw screen
         // frame (no gaps), and the strip underneath keeps its own layout -
         // leaving fullscreen restores everything without a re-tile.

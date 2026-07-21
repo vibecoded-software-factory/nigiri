@@ -7,7 +7,8 @@ import AppKit
 // rgba(127, 200, 255, 128).
 final class InsertHintOverlay {
     private let window: NSWindow
-    private var color = NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 128 / 255.0)
+    private var color = NSColor(
+        calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 128 / 255.0)
     private var isOff = false
 
     init() {

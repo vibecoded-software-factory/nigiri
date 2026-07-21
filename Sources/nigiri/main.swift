@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import QuartzCore
 
-setvbuf(stdout, nil, _IOLBF, 0) // line-buffer even when stdout is redirected to a file/pipe
+setvbuf(stdout, nil, _IOLBF, 0)  // line-buffer even when stdout is redirected to a file/pipe
 
 let cliArgs = Array(CommandLine.arguments.dropFirst())
 
@@ -55,13 +55,18 @@ if cliArgs.first == "check-config" {
         exit(1)
     }
     var visited: Set<String> = []
-    let expanded = NigiriConfig.expandIncludes(text, baseDir: (path as NSString).deletingLastPathComponent, visited: &visited)
+    let expanded = NigiriConfig.expandIncludes(
+        text, baseDir: (path as NSString).deletingLastPathComponent, visited: &visited)
     let parsed = NigiriConfig.parse(expanded)
     print("--- \(path)")
     print("mod-key: \(parsed.modKey)")
-    print("binds: \(parsed.binds.count) de teclado, \(parsed.mouseBindings.count) de mouse, \(parsed.wheelBindings.count) de rueda")
+    print(
+        "binds: \(parsed.binds.count) de teclado, \(parsed.mouseBindings.count) de mouse, \(parsed.wheelBindings.count) de rueda"
+    )
     print("window-rules: \(parsed.rules.count) | animaciones: \(parsed.animations.count)")
-    print("gaps: \(parsed.gap) | ancho por defecto: \(parsed.defaultColumnWidth) | focus-ring: \(parsed.ringWidth)")
+    print(
+        "gaps: \(parsed.gap) | ancho por defecto: \(parsed.defaultColumnWidth) | focus-ring: \(parsed.ringWidth)"
+    )
     print("spawn-at-startup: \(parsed.spawnAtStartup.count) | environment: \(parsed.environment.count)")
     exit(0)
 }
@@ -86,24 +91,26 @@ func runResidentApp() -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     app.run()
-    exit(0) // unreachable in practice; app.run() only returns on NSApp.terminate()
+    exit(0)  // unreachable in practice; app.run() only returns on NSApp.terminate()
 }
-
 
 if cliArgs.first == "move" {
     let rest = Array(cliArgs.dropFirst())
     let app = parseFlag("--app", in: rest) ?? ""
     let title = parseFlag("--title", in: rest) ?? ""
     guard let xs = parseFlag("--x", in: rest), let x = Double(xs),
-          let ys = parseFlag("--y", in: rest), let y = Double(ys),
-          let ws = parseFlag("--w", in: rest), let w = Double(ws),
-          let hs = parseFlag("--h", in: rest), let h = Double(hs),
-          !app.isEmpty else {
+        let ys = parseFlag("--y", in: rest), let y = Double(ys),
+        let ws = parseFlag("--w", in: rest), let w = Double(ws),
+        let hs = parseFlag("--h", in: rest), let h = Double(hs),
+        !app.isEmpty
+    else {
         print("usage: nigiri move --app <name> [--title <substring>] --x <n> --y <n> --w <n> --h <n>")
         exit(1)
     }
     guard let window = WindowMover.findWindow(appContains: app, titleContains: title) else {
-        print("error: \(WindowMover.MoveError.notFound.description) (app contains \"\(app)\", title contains \"\(title)\")")
+        print(
+            "error: \(WindowMover.MoveError.notFound.description) (app contains \"\(app)\", title contains \"\(title)\")"
+        )
         exit(1)
     }
     do {
@@ -118,8 +125,8 @@ if cliArgs.first == "move" {
 
 if cliArgs.first == "listen" {
     let listener = HotkeyListener()
-    let kVK_ANSI_9: CGKeyCode = 0x19
-    listener.register(kVK_ANSI_9, modifiers: [.command, .option]) {
+    let keyNine: CGKeyCode = 0x19
+    listener.register(keyNine, modifiers: [.command, .option]) {
         print("hello from nigiri (Cmd+Option+9 fired)")
     }
     guard listener.start() else {
@@ -170,7 +177,9 @@ if windows.isEmpty {
 } else {
     for w in windows {
         let f = w.frame
-        print("[\(w.appName) pid=\(w.pid)] \"\(w.title)\" @ (\(Int(f.origin.x)), \(Int(f.origin.y))) \(Int(f.width))x\(Int(f.height))")
+        print(
+            "[\(w.appName) pid=\(w.pid)] \"\(w.title)\" @ (\(Int(f.origin.x)), \(Int(f.origin.y))) \(Int(f.width))x\(Int(f.height))"
+        )
     }
 }
 

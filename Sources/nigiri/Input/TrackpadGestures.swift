@@ -44,7 +44,8 @@ private typealias MTDeviceCreateDefaultFn = @convention(c) () -> UnsafeMutableRa
 // multitouch surface too, and MTDeviceCreateDefault only ever returns the
 // built-in trackpad.
 private typealias MTDeviceCreateListFn = @convention(c) () -> CFArray?
-private typealias MTDeviceGetFamilyIDFn = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<Int32>) -> Int32
+private typealias MTDeviceGetFamilyIDFn =
+    @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<Int32>) -> Int32
 private typealias MTRegisterFn = @convention(c) (UnsafeMutableRawPointer?, MTContactCallback) -> Void
 private typealias MTStartFn = @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void
 private typealias MTStopFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
@@ -93,7 +94,7 @@ private nonisolated final class SwipeRecognizer: @unchecked Sendable {
         }
         guard let dir else { return nil }
         lastFireTime = now
-        startX = cx; startY = cy   // re-arm so a continued drag can repeat
+        startX = cx; startY = cy  // re-arm so a continued drag can repeat
         return dir
     }
 }
@@ -138,9 +139,10 @@ final class TrackpadGestures {
             return
         }
         guard let createSym = dlsym(handle, "MTDeviceCreateDefault"),
-              let registerSym = dlsym(handle, "MTRegisterContactFrameCallback"),
-              let startSym = dlsym(handle, "MTDeviceStart"),
-              let stopSym = dlsym(handle, "MTDeviceStop") else {
+            let registerSym = dlsym(handle, "MTRegisterContactFrameCallback"),
+            let startSym = dlsym(handle, "MTDeviceStart"),
+            let stopSym = dlsym(handle, "MTDeviceStop")
+        else {
             print("[gestures] MultitouchSupport symbols missing - disabled")
             return
         }
@@ -148,12 +150,15 @@ final class TrackpadGestures {
         registerFn = unsafeBitCast(registerSym, to: MTRegisterFn.self)
         startFn = unsafeBitCast(startSym, to: MTStartFn.self)
         stopFn = unsafeBitCast(stopSym, to: MTStopFn.self)
-        let familyFn = dlsym(handle, "MTDeviceGetFamilyID").map { unsafeBitCast($0, to: MTDeviceGetFamilyIDFn.self) }
+        let familyFn = dlsym(handle, "MTDeviceGetFamilyID").map {
+            unsafeBitCast($0, to: MTDeviceGetFamilyIDFn.self)
+        }
 
         // Every device: the built-in trackpad AND anything else with a touch
         // surface (a Magic Mouse, a Magic Trackpad).
         if let listSym = dlsym(handle, "MTDeviceCreateList"),
-           let list = unsafeBitCast(listSym, to: MTDeviceCreateListFn.self)() as [AnyObject]? {
+            let list = unsafeBitCast(listSym, to: MTDeviceCreateListFn.self)() as [AnyObject]?
+        {
             for entry in list {
                 devices.append(Unmanaged.passUnretained(entry).toOpaque())
             }
@@ -177,7 +182,9 @@ final class TrackpadGestures {
         // first, start nothing until it is all there.
         let registrable = devices.prefix(mtCallbacks.count)
         if devices.count > mtCallbacks.count {
-            print("[gestures] \(devices.count - mtCallbacks.count) dispositivo(s) sin registrar: solo hay \(mtCallbacks.count) ranuras")
+            print(
+                "[gestures] \(devices.count - mtCallbacks.count) dispositivo(s) sin registrar: solo hay \(mtCallbacks.count) ranuras"
+            )
         }
         for (slot, dev) in registrable.enumerated() {
             var family: Int32 = 0
@@ -212,14 +219,18 @@ final class TrackpadGestures {
             recognizers.setFingerCount(device, n)
         }
         let touches = raw.bindMemory(to: MTTouch.self, capacity: n)
-        var cx: Float = 0, cy: Float = 0
+        var cx: Float = 0
+        var cy: Float = 0
         for i in 0..<n {
             cx += touches[i].normalized.pos.x
             cy += touches[i].normalized.pos.y
         }
         cx /= Float(n); cy /= Float(n)
-        guard let dir = recognizers.feed(device, centroidX: cx, centroidY: cy,
-                                         now: Date().timeIntervalSinceReferenceDate) else { return }
+        guard
+            let dir = recognizers.feed(
+                device, centroidX: cx, centroidY: cy,
+                now: Date().timeIntervalSinceReferenceDate)
+        else { return }
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated { self?.onSwipe?(dir, n, isMouse) }
         }

@@ -24,9 +24,13 @@ extension TilingEngine {
         }
         guard !workspace.columns.isEmpty else { return }
         workspace.moveColumnFocus(by: delta)
-        reflow() // scrolls the strip to keep the newly-focused column in view; keeps the ring in sync every animation step
+        // Scrolls the strip to keep the newly-focused column in view, and
+        // keeps the ring in sync on every animation step.
+        reflow()
         focusCurrentColumn()
-        print("focus-column-\(delta < 0 ? "left" : "right") -> column \(workspace.focusedIndex) (\(describeFocus()))")
+        print(
+            "focus-column-\(delta < 0 ? "left" : "right") -> column \(workspace.focusedIndex) (\(describeFocus()))"
+        )
     }
     func focusColumnEdge(first: Bool) {
         if workspace.isFloatingActive {
@@ -41,7 +45,9 @@ extension TilingEngine {
         workspace.focus(column: first ? 0 : workspace.columns.count - 1)
         reflow()
         focusCurrentColumn()
-        print("focus-column-\(first ? "first" : "last") -> column \(workspace.focusedIndex) (\(describeFocus()))")
+        print(
+            "focus-column-\(first ? "first" : "last") -> column \(workspace.focusedIndex) (\(describeFocus()))"
+        )
     }
     // Navigates WITHIN the focused column's vertical stack - a no-op while
     // that column only has one window, which is still the common case until
@@ -81,7 +87,9 @@ extension TilingEngine {
         target.size.width = max(50, frame.width + screenFrame.width * widthDeltaPercent / 100)
         target.size.height = max(50, frame.height + screenFrame.height * heightDeltaPercent / 100)
         animateFrames([(window: w, frame: target)]) { _ in }
-        print("resize-floating-window \(Int(widthDeltaPercent != 0 ? widthDeltaPercent : heightDeltaPercent))% -> \(w.title)")
+        print(
+            "resize-floating-window \(Int(widthDeltaPercent != 0 ? widthDeltaPercent : heightDeltaPercent))% -> \(w.title)"
+        )
     }
 
     // Edge-addressed resize for a floating window: the NAMED edge moves,
@@ -100,13 +108,13 @@ extension TilingEngine {
         switch edge {
         case "left":
             let newWidth = max(50, frame.width + screen.width * deltaPercent / 100)
-            target.origin.x = frame.maxX - newWidth // right edge pinned
+            target.origin.x = frame.maxX - newWidth  // right edge pinned
             target.size.width = newWidth
         case "right":
             target.size.width = max(50, frame.width + screen.width * deltaPercent / 100)
         case "top":
             let newHeight = max(50, frame.height + screen.height * deltaPercent / 100)
-            target.origin.y = frame.maxY - newHeight // bottom edge pinned
+            target.origin.y = frame.maxY - newHeight  // bottom edge pinned
             target.size.height = newHeight
         case "bottom":
             target.size.height = max(50, frame.height + screen.height * deltaPercent / 100)
@@ -142,7 +150,8 @@ extension TilingEngine {
         // drifted. Which is precisely the drift the comment below says was
         // caught live by measurement.
         let myFloor = column.validMinWidth
-        let neighborFloor = workspace.focusedIndex > 0
+        let neighborFloor =
+            workspace.focusedIndex > 0
             ? workspace.columns[workspace.focusedIndex - 1].validMinWidth : nil
         ColumnLayoutEngine.newEpoch()
         switch edge {
@@ -174,7 +183,9 @@ extension TilingEngine {
             // bumped, so asking the column now always answers nil.
             func floor(_ c: Column) -> CGFloat { (c === column ? myFloor : neighborFloor) ?? 0 }
             func effectivePx(_ c: Column) -> CGFloat {
-                max(ColumnLayoutEngine.width(forProportion: c.widthProportion, usableWidth: usableWidth), floor(c))
+                max(
+                    ColumnLayoutEngine.width(forProportion: c.widthProportion, usableWidth: usableWidth),
+                    floor(c))
             }
             func clampPx(_ px: CGFloat, for c: Column) -> CGFloat {
                 min(usableWidth, max(max(usableWidth * 0.05, floor(c)), px))
@@ -187,12 +198,16 @@ extension TilingEngine {
             let absorbedPx = neighborOldPx - neighborNewPx
             // Only trade what the neighbor can actually absorb/yield, so
             // the pair's total stays constant to the pixel.
-            column.widthProportion = ColumnLayoutEngine.proportion(forWidth: myOldPx + absorbedPx, usableWidth: usableWidth)
-            neighbor.widthProportion = ColumnLayoutEngine.proportion(forWidth: neighborNewPx, usableWidth: usableWidth)
+            column.widthProportion = ColumnLayoutEngine.proportion(
+                forWidth: myOldPx + absorbedPx, usableWidth: usableWidth)
+            neighbor.widthProportion = ColumnLayoutEngine.proportion(
+                forWidth: neighborNewPx, usableWidth: usableWidth)
             column.presetWidthIndex = nil
             neighbor.presetWidthIndex = nil
             reflow()
-            print("resize-edge left \(deltaPercent > 0 ? "+" : "")\(Int(deltaPercent))% -> \(Int(myOldPx + absorbedPx))px (neighbor \(Int(neighborNewPx))px)")
+            print(
+                "resize-edge left \(deltaPercent > 0 ? "+" : "")\(Int(deltaPercent))% -> \(Int(myOldPx + absorbedPx))px (neighbor \(Int(neighborNewPx))px)"
+            )
 
         case "top", "bottom":
             // Boundary with the stack neighbor above/below: both sides
@@ -211,7 +226,8 @@ extension TilingEngine {
             let w = column.windows[k]
             let neighbor = column.windows[neighborIndex]
             guard let wFrame = WindowMover.currentFrame(w.axElement),
-                  let nFrame = WindowMover.currentFrame(neighbor.axElement) else { return }
+                let nFrame = WindowMover.currentFrame(neighbor.axElement)
+            else { return }
             let wH = w.manualHeightPx ?? wFrame.height
             let nH = neighbor.manualHeightPx ?? nFrame.height
             let columnHeight = usableScreen().frame.height - 2 * ColumnLayoutEngine.gap
@@ -221,7 +237,9 @@ extension TilingEngine {
             neighbor.manualHeightPx = nH - dClamped
             column.cachedHeights = nil
             reflow()
-            print("resize-edge \(edge) \(deltaPercent > 0 ? "+" : "")\(Int(deltaPercent))% -> \(Int(wH + dClamped))px (neighbor \(Int(nH - dClamped))px)")
+            print(
+                "resize-edge \(edge) \(deltaPercent > 0 ? "+" : "")\(Int(deltaPercent))% -> \(Int(wH + dClamped))px (neighbor \(Int(nH - dClamped))px)"
+            )
 
         default:
             print("resize-edge: unknown edge \"\(edge)\" (left/right/top/bottom)")
@@ -262,7 +280,9 @@ extension TilingEngine {
     // move_column_to (a plain adjacent swap is only equivalent to that when
     // moving exactly one slot, which is all moveColumn(delta:) above does).
     func moveColumnToEdge(first: Bool) {
-        guard !workspace.isFloatingActive, workspace.columns.indices.contains(workspace.focusedIndex) else { return }
+        guard !workspace.isFloatingActive, workspace.columns.indices.contains(workspace.focusedIndex) else {
+            return
+        }
         let newIndex = first ? 0 : workspace.columns.count - 1
         guard newIndex != workspace.focusedIndex else { return }
         guard let column = workspace.removeColumn(at: workspace.focusedIndex) else { return }
@@ -304,8 +324,9 @@ extension TilingEngine {
     // "these two can't stack" instead of leaving them silently overlapped.
     func expelBackIfStackOverflows(_ column: Column, consumed window: ManagedWindow) {
         guard let heights = column.cachedHeights, heights.count == column.windows.count,
-              column.windows.contains(where: { $0 === window }),
-              let columnIndex = workspace.columns.firstIndex(where: { $0 === column }) else { return }
+            column.windows.contains(where: { $0 === window }),
+            let columnIndex = workspace.columns.firstIndex(where: { $0 === column })
+        else { return }
         let available = usableScreen().frame.height - 2 * ColumnLayoutEngine.gap
         let total = heights.reduce(0, +) + CGFloat(heights.count - 1) * ColumnLayoutEngine.gap
         guard total > available + 2 else { return }
@@ -317,7 +338,9 @@ extension TilingEngine {
         newColumn.setWindows([window])
         workspace.insertColumn(newColumn, at: columnIndex + 1)
         workspace.focus(column: columnIndex + 1)
-        print("consume-or-expel: stack needs \(Int(total))px but the column has \(Int(available))px - expelled back out")
+        print(
+            "consume-or-expel: stack needs \(Int(total))px but the column has \(Int(available))px - expelled back out"
+        )
         reflow()
         focusCurrentColumn()
     }
@@ -342,7 +365,9 @@ extension TilingEngine {
 
     func consumeOrExpel(delta: Int) {
         focusedColumn().map(captureHeightWeights)
-        guard let source = focusedColumn(), source.windows.indices.contains(source.focusedWindowIndex) else { return }
+        guard let source = focusedColumn(), source.windows.indices.contains(source.focusedWindowIndex) else {
+            return
+        }
         let sourceIndex = workspace.focusedIndex
         let neighborIndex = sourceIndex + delta
         var verifyFits: (() -> Void)?
@@ -370,7 +395,9 @@ extension TilingEngine {
         }
         reflow(onSettled: verifyFits)
         focusCurrentColumn()
-        print("consume-or-expel-\(delta < 0 ? "left" : "right") -> \(workspace.columns.count) column(s), focused column \(workspace.focusedIndex) (\(describeFocus()))")
+        print(
+            "consume-or-expel-\(delta < 0 ? "left" : "right") -> \(workspace.columns.count) column(s), focused column \(workspace.focusedIndex) (\(describeFocus()))"
+        )
     }
 
     // niri's expel-window-from-column: unconditionally pulls the LAST window
@@ -399,7 +426,8 @@ extension TilingEngine {
             switch size {
             case .proportion(let p): return p
             case .fixed(let px):
-                return usableWidth > 0 ? ColumnLayoutEngine.proportion(forWidth: px, usableWidth: usableWidth) : 0.5
+                return usableWidth > 0
+                    ? ColumnLayoutEngine.proportion(forWidth: px, usableWidth: usableWidth) : 0.5
             }
         }
     }
@@ -418,14 +446,21 @@ extension TilingEngine {
         ColumnLayoutEngine.newEpoch()
         let presets = presetProportions()
         guard !presets.isEmpty else { return }
-        guard let nextIndex = ColumnLayoutEngine.presetIndex(after: column.widthProportion, in: presets,
-                                                            delta: delta, from: column.presetWidthIndex) else { return }
+        guard
+            let nextIndex = ColumnLayoutEngine.presetIndex(
+                after: column.widthProportion, in: presets,
+                delta: delta, from: column.presetWidthIndex)
+        else { return }
         column.presetWidthIndex = nextIndex
         let clamped = clampedProportion(presets[nextIndex], for: column, knownFloor: knownFloor)
         column.widthProportion = clamped
         reflow()
-        let clampNote = abs(clamped - presets[nextIndex]) > 0.001 ? " (clamped to \(String(format: "%.0f%%", clamped * 100)) by a window's minimum)" : ""
-        print("switch-preset-column-width\(delta < 0 ? "-back" : "") -> \(String(format: "%.0f%%", presets[nextIndex] * 100))\(clampNote)")
+        let clampNote =
+            abs(clamped - presets[nextIndex]) > 0.001
+            ? " (clamped to \(String(format: "%.0f%%", clamped * 100)) by a window's minimum)" : ""
+        print(
+            "switch-preset-column-width\(delta < 0 ? "-back" : "") -> \(String(format: "%.0f%%", presets[nextIndex] * 100))\(clampNote)"
+        )
     }
 
     // niri's switch-preset-window-width, the width counterpart of
@@ -566,7 +601,9 @@ extension TilingEngine {
         // attribute exposes minimum heights, so commit optimistically and
         // bounce back at settle if the stack can't hold both.
         reflow(onSettled: { self.expelBackIfStackOverflows(column, consumed: window) })
-        print("consume-window-into-column -> \(column.windows.count) window(s) in column \(workspace.focusedIndex)")
+        print(
+            "consume-window-into-column -> \(column.windows.count) window(s) in column \(workspace.focusedIndex)"
+        )
     }
 
     // niri's focus-workspace-previous: bounce between the current and the
@@ -620,13 +657,17 @@ extension TilingEngine {
     func clampedProportion(_ proportion: CGFloat, for column: Column, knownFloor: CGFloat? = nil) -> CGFloat {
         let usableWidth = usableScreen().usableWidth
         let minWidth = knownFloor ?? column.validMinWidth
-        let p = ColumnLayoutEngine.clampProportion(proportion, minWidth: minWidth,
-                                                   maxWidth: column.maxWidthPx, usableWidth: usableWidth)
+        let p = ColumnLayoutEngine.clampProportion(
+            proportion, minWidth: minWidth,
+            maxWidth: column.maxWidthPx, usableWidth: usableWidth)
         if let minWidth, usableWidth > 0,
-           p > min(1.0, max(0.05, proportion)) + 0.0001 {
+            p > min(1.0, max(0.05, proportion)) + 0.0001
+        {
             // Said out loud: a silent floor is why "set-column-width -10%
             // does nothing" was impossible to diagnose from the outside.
-            print("[layout] \(Int(proportion * 100))% pedido, pero la app no baja de \(Int(minWidth))px - se vuelve a medir")
+            print(
+                "[layout] \(Int(proportion * 100))% pedido, pero la app no baja de \(Int(minWidth))px - se vuelve a medir"
+            )
         }
         return p
     }
@@ -649,7 +690,8 @@ extension TilingEngine {
         func proportion(forPixels px: CGFloat) -> CGFloat {
             ColumnLayoutEngine.proportion(forWidth: px, usableWidth: usableWidth)
         }
-        let currentPixels = ColumnLayoutEngine.width(forProportion: column.widthProportion, usableWidth: usableWidth)
+        let currentPixels = ColumnLayoutEngine.width(
+            forProportion: column.widthProportion, usableWidth: usableWidth)
         let target: CGFloat
         switch change {
         case .setProportion(let p): target = p / 100
@@ -672,7 +714,8 @@ extension TilingEngine {
     func setWindowHeight(_ change: SizeChange) {
         guard let column = focusedColumn(), let window = focusedStackWindow() else { return }
         let columnHeight = usableScreen().frame.height - 2 * ColumnLayoutEngine.gap
-        let current = window.manualHeightPx ?? (WindowMover.currentFrame(window.axElement)?.height ?? columnHeight)
+        let current =
+            window.manualHeightPx ?? (WindowMover.currentFrame(window.axElement)?.height ?? columnHeight)
         let requested: CGFloat
         switch change {
         case .setProportion(let p): requested = columnHeight * p / 100
@@ -714,13 +757,16 @@ extension TilingEngine {
         ColumnLayoutEngine.newEpoch()
         guard focusedColumn() != nil else { return }
         let usableWidth = usableScreen().usableWidth
-        let placements = ColumnLayoutEngine.columnPlacements(columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
+        let placements = ColumnLayoutEngine.columnPlacements(
+            columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
         let activeIndex = workspace.focusedIndex
 
         var otherVisibleWidth: CGFloat = 0
         var anyOtherVisible = false
         for (idx, p) in placements.enumerated() where idx != activeIndex {
-            let visible = p.x >= workspace.viewOffset - 0.5 && (p.x + p.width) <= workspace.viewOffset + usableWidth + 0.5
+            let visible =
+                p.x >= workspace.viewOffset - 0.5
+                && (p.x + p.width) <= workspace.viewOffset + usableWidth + 0.5
             if visible {
                 otherVisibleWidth += p.width + ColumnLayoutEngine.gap
                 anyOtherVisible = true
@@ -743,7 +789,9 @@ extension TilingEngine {
             ColumnLayoutEngine.proportion(forWidth: newWidth, usableWidth: usableWidth)
         workspace.columns[activeIndex].presetWidthIndex = nil
         reflow()
-        print("expand-column-to-available-width -> \(String(format: "%.0f%%", workspace.columns[activeIndex].widthProportion * 100))")
+        print(
+            "expand-column-to-available-width -> \(String(format: "%.0f%%", workspace.columns[activeIndex].widthProportion * 100))"
+        )
     }
 
     // niri's center-column: an explicit, on-demand recentering of the
@@ -752,7 +800,8 @@ extension TilingEngine {
     func centerColumn() {
         guard focusedColumn() != nil else { return }
         let usableWidth = usableScreen().usableWidth
-        let placements = ColumnLayoutEngine.columnPlacements(columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
+        let placements = ColumnLayoutEngine.columnPlacements(
+            columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
         let p = placements[workspace.focusedIndex]
         reflow(explicitViewOffset: p.x + p.width / 2 - usableWidth / 2)
         print("center-column")
@@ -764,8 +813,12 @@ extension TilingEngine {
     func centerVisibleColumns() {
         guard !workspace.isFloatingActive, !workspace.columns.isEmpty else { return }
         let usableWidth = usableScreen().usableWidth
-        let placements = ColumnLayoutEngine.columnPlacements(columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
-        let visible = placements.filter { $0.x >= workspace.viewOffset - 0.5 && ($0.x + $0.width) <= workspace.viewOffset + usableWidth + 0.5 }
+        let placements = ColumnLayoutEngine.columnPlacements(
+            columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
+        let visible = placements.filter {
+            $0.x >= workspace.viewOffset - 0.5
+                && ($0.x + $0.width) <= workspace.viewOffset + usableWidth + 0.5
+        }
         guard let first = visible.first, let last = visible.last else { return }
         let visibleSpan = (last.x + last.width) - first.x
         let slack = usableWidth - visibleSpan
@@ -795,7 +848,8 @@ extension TilingEngine {
             workspace.focus(floating: workspace.floatingFocusedIndex)
             let newColumn = Column()
             newColumn.setWindows([window])
-            let insertAt = workspace.columns.isEmpty ? 0 : min(workspace.focusedIndex + 1, workspace.columns.count)
+            let insertAt =
+                workspace.columns.isEmpty ? 0 : min(workspace.focusedIndex + 1, workspace.columns.count)
             workspace.insertColumn(newColumn, at: insertAt)
             workspace.focus(column: insertAt)
             // Unconditionally: the window that just got tiled is the one the
@@ -823,7 +877,8 @@ extension TilingEngine {
                 var newOrigin = CGPoint(x: currentFrame.origin.x + 50, y: currentFrame.origin.y + 50)
                 newOrigin.x = min(newOrigin.x, screenFrame.maxX - currentFrame.width)
                 newOrigin.y = min(newOrigin.y, screenFrame.maxY - currentFrame.height)
-                try? WindowMover.setFrame(window.axElement, to: CGRect(origin: newOrigin, size: currentFrame.size))
+                try? WindowMover.setFrame(
+                    window.axElement, to: CGRect(origin: newOrigin, size: currentFrame.size))
             }
             workspace.floatingWindows.append(window)
             workspace.focus(floating: workspace.floatingWindows.count - 1)
@@ -841,6 +896,8 @@ extension TilingEngine {
         workspace.isFloatingActive.toggle()
         focusCurrentColumn()
         updateRing()
-        print("switch-focus-between-floating-and-tiling -> \(workspace.isFloatingActive ? "floating" : "tiling") (\(describeFocus()))")
+        print(
+            "switch-focus-between-floating-and-tiling -> \(workspace.isFloatingActive ? "floating" : "tiling") (\(describeFocus()))"
+        )
     }
 }

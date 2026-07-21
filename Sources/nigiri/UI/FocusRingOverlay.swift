@@ -63,7 +63,9 @@ final class FocusRingOverlay: NSObject {
         window.backgroundColor = .clear
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.animationBehavior = .none // rule out any default AppKit window-move animation too, not just the layers'
+        // Rules out any default AppKit window-move animation too, not just
+        // the layers'.
+        window.animationBehavior = .none
         // .floating: above ordinary app windows (re-raised on every app
         // activation, below, so another regular window stealing focus can't
         // cover it) but BELOW system UI like Spotlight/Control
@@ -230,7 +232,9 @@ private final class RingView: NSView {
         // spread 4, offset 0,0, color #7355a677) - shadowPath is set to the
         // ring's own outline in layout(), so the glow silhouette follows the
         // ring shape instead of a plain rectangle.
-        gradientLayer.shadowColor = NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 0x77 / 255.0).cgColor
+        gradientLayer.shadowColor =
+            NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 0x77 / 255.0)
+            .cgColor
         gradientLayer.shadowOpacity = 1
         gradientLayer.shadowRadius = 14
         gradientLayer.shadowOffset = .zero
@@ -273,7 +277,10 @@ private final class RingView: NSView {
         // the inner stroke edge lands on radius R (hugging the window) and
         // the outer on R + w.
         let cornerRadius = macOSWindowCornerRadius + borderWidth / 2
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2), xRadius: cornerRadius, yRadius: cornerRadius).cgPath
+        let path = NSBezierPath(
+            roundedRect: bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2), xRadius: cornerRadius,
+            yRadius: cornerRadius
+        ).cgPath
         maskLayer.path = path
         maskLayer.frame = bounds
         gradientLayer.shadowPath = path
@@ -289,7 +296,8 @@ private extension NSBezierPath {
             switch element(at: i, associatedPoints: &points) {
             case .moveTo: path.move(to: points[0])
             case .lineTo: path.addLine(to: points[0])
-            case .curveTo, .cubicCurveTo: path.addCurve(to: points[2], control1: points[0], control2: points[1])
+            case .curveTo, .cubicCurveTo:
+                path.addCurve(to: points[2], control1: points[0], control2: points[1])
             case .quadraticCurveTo: path.addQuadCurve(to: points[1], control: points[0])
             case .closePath: path.closeSubpath()
             @unknown default: break

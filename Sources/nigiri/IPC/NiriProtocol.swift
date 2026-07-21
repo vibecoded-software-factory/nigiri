@@ -48,10 +48,11 @@ enum NiriProtocol {
         // niri's own shape: either a bare string ("Version") or a one-key
         // object ({"Action": {...}}).
         guard let data = trimmed.data(using: .utf8),
-              // .fragmentsAllowed: niri's argument-less requests are bare
-              // JSON strings ("Windows"), which are not valid top-level
-              // JSON documents without it - they parsed as garbage.
-              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+            // .fragmentsAllowed: niri's argument-less requests are bare
+            // JSON strings ("Windows"), which are not valid top-level
+            // JSON documents without it - they parsed as garbage.
+            let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        else {
             return Parsed(request: .unknown(trimmed), legacy: true)
         }
         if let name = json as? String {
@@ -88,9 +89,13 @@ enum NiriProtocol {
                         // ({"index": 2}), and the line parser reads numbers
                         // and key=value alike.
                         for (k, v) in args.sorted(by: { $0.key < $1.key }) {
-                            if let n = v as? Int { line += " \(n)" }
-                            else if let s = v as? String { line += " \(s)" }
-                            else if let b = v as? Bool { line += " \(kebab(k))=\(b)" }
+                            if let n = v as? Int {
+                                line += " \(n)"
+                            } else if let s = v as? String {
+                                line += " \(s)"
+                            } else if let b = v as? Bool {
+                                line += " \(kebab(k))=\(b)"
+                            }
                         }
                     }
                     return .action(line)
@@ -131,7 +136,9 @@ extension TilingEngine {
 
     // niri's Window: id, title, app_id, pid, workspace_id, is_focused,
     // is_floating, plus the layout position this compositor actually has.
-    func niriWindow(_ w: ManagedWindow, workspace: Workspace, column: Int?, row: Int?, floating: Bool) -> [String: Any] {
+    func niriWindow(
+        _ w: ManagedWindow, workspace: Workspace, column: Int?, row: Int?, floating: Bool
+    ) -> [String: Any] {
         var entry: [String: Any] = [
             "id": Int(w.id),
             "title": w.title,
@@ -144,8 +151,10 @@ extension TilingEngine {
         if let column { entry["column"] = column }
         if let row { entry["row"] = row }
         if let frame = WindowMover.currentFrame(w.axElement) {
-            entry["layout"] = ["x": Int(frame.origin.x), "y": Int(frame.origin.y),
-                               "width": Int(frame.width), "height": Int(frame.height)]
+            entry["layout"] = [
+                "x": Int(frame.origin.x), "y": Int(frame.origin.y),
+                "width": Int(frame.width), "height": Int(frame.height),
+            ]
         }
         return entry
     }
@@ -194,9 +203,11 @@ extension TilingEngine {
                 "name": Self.outputName(screen) ?? "display-\(index)",
                 "make": "Apple",
                 "model": Self.outputName(screen) ?? "display-\(index)",
-                "logical": ["x": Int(frame.origin.x), "y": Int(frame.origin.y),
-                            "width": Int(frame.width), "height": Int(frame.height),
-                            "scale": Double(screen.backingScaleFactor)],
+                "logical": [
+                    "x": Int(frame.origin.x), "y": Int(frame.origin.y),
+                    "width": Int(frame.width), "height": Int(frame.height),
+                    "scale": Double(screen.backingScaleFactor),
+                ],
                 "is_focused": index == 0,
             ]
         }
@@ -212,19 +223,26 @@ extension TilingEngine {
         case .windows:
             return parsed.legacy ? jsonLine(windowsSnapshot()) : ok(["Windows": niriWindows()], legacy: false)
         case .workspaces:
-            return parsed.legacy ? jsonLine(workspacesSnapshot()) : ok(["Workspaces": niriWorkspaces()], legacy: false)
+            return parsed.legacy
+                ? jsonLine(workspacesSnapshot()) : ok(["Workspaces": niriWorkspaces()], legacy: false)
         case .focusedWindow:
             guard let w = focusedManagedWindow() else {
                 return parsed.legacy ? "null" : ok(["FocusedWindow": NSNull()], legacy: false)
             }
             if parsed.legacy {
-                return jsonLine(windowSnapshot(w, workspaceIndex: activeWorkspaceIndex,
-                                               column: workspace.isFloatingActive ? nil : workspace.focusedIndex,
-                                               row: nil, floating: workspace.isFloatingActive))
+                return jsonLine(
+                    windowSnapshot(
+                        w, workspaceIndex: activeWorkspaceIndex,
+                        column: workspace.isFloatingActive ? nil : workspace.focusedIndex,
+                        row: nil, floating: workspace.isFloatingActive))
             }
-            return ok(["FocusedWindow": niriWindow(w, workspace: workspace,
-                                                   column: workspace.isFloatingActive ? nil : workspace.focusedIndex,
-                                                   row: nil, floating: workspace.isFloatingActive)], legacy: false)
+            return ok(
+                [
+                    "FocusedWindow": niriWindow(
+                        w, workspace: workspace,
+                        column: workspace.isFloatingActive ? nil : workspace.focusedIndex,
+                        row: nil, floating: workspace.isFloatingActive)
+                ], legacy: false)
         case .outputs:
             return ok(["Outputs": niriOutputs()], legacy: parsed.legacy)
         case .focusedOutput:
@@ -236,13 +254,19 @@ extension TilingEngine {
             // would mean holding a socket open across an interactive pick;
             // the honest answer is the window under the cursor right now.
             let point = NSEvent.mouseLocation
-            guard let primary = NSScreen.screens.first else { return err("no display", legacy: parsed.legacy) }
+            guard let primary = NSScreen.screens.first else {
+                return err("no display", legacy: parsed.legacy)
+            }
             let axPoint = CGPoint(x: point.x, y: primary.frame.height - point.y)
             guard let hit = windowUnderPoint(axPoint), let location = locate(hit.window) else {
                 return ok(["PickedWindow": NSNull()], legacy: parsed.legacy)
             }
-            return ok(["PickedWindow": niriWindow(hit.window, workspace: workspaces[location.workspaceIndex],
-                                                  column: nil, row: nil, floating: hit.floating)], legacy: parsed.legacy)
+            return ok(
+                [
+                    "PickedWindow": niriWindow(
+                        hit.window, workspace: workspaces[location.workspaceIndex],
+                        column: nil, row: nil, floating: hit.floating)
+                ], legacy: parsed.legacy)
         case .action(let actionLine):
             performAction(actionLine)
             return parsed.legacy ? "{\"ok\":true}" : ok("Handled", legacy: false)
@@ -271,7 +295,9 @@ extension TilingEngine {
         }
         for column in workspace.columns {
             for w in column.windows {
-                if let frame = WindowMover.currentFrame(w.axElement), frame.contains(point) { return (w, false) }
+                if let frame = WindowMover.currentFrame(w.axElement), frame.contains(point) {
+                    return (w, false)
+                }
             }
         }
         return nil
@@ -339,7 +365,8 @@ extension TilingEngine {
 
     func emitWorkspaceActivated(_ index: Int) {
         guard workspaces.indices.contains(index) else { return }
-        msgServer.broadcast(jsonLine(["WorkspaceActivated": ["id": Int(workspaces[index].id), "focused": true]]))
+        msgServer.broadcast(
+            jsonLine(["WorkspaceActivated": ["id": Int(workspaces[index].id), "focused": true]]))
     }
 
     func emitOverviewChanged(_ open: Bool) {

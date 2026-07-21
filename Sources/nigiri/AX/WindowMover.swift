@@ -20,11 +20,17 @@ enum WindowMover {
 
     static func findWindow(appContains: String, titleContains: String) -> AXUIElement? {
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
-            guard let name = app.localizedName, name.localizedCaseInsensitiveContains(appContains) else { continue }
+            guard let name = app.localizedName, name.localizedCaseInsensitiveContains(appContains) else {
+                continue
+            }
             guard let windows = AX.windows(ofPid: app.processIdentifier) else { continue }
             if titleContains.isEmpty, let first = windows.first { return first }
             for w in windows {
-                if let t: String = AX.attribute(w, kAXTitleAttribute as String), t.localizedCaseInsensitiveContains(titleContains) { return w }
+                if let t: String = AX.attribute(w, kAXTitleAttribute as String),
+                    t.localizedCaseInsensitiveContains(titleContains)
+                {
+                    return w
+                }
             }
         }
         return nil
@@ -37,10 +43,11 @@ enum WindowMover {
         var posRef: CFTypeRef?
         var sizeRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posRef) == .success,
-              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let posRef, let sizeRef,
-              CFGetTypeID(posRef) == AXValueGetTypeID(),
-              CFGetTypeID(sizeRef) == AXValueGetTypeID() else { return nil }
+            AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
+            let posRef, let sizeRef,
+            CFGetTypeID(posRef) == AXValueGetTypeID(),
+            CFGetTypeID(sizeRef) == AXValueGetTypeID()
+        else { return nil }
         var origin = CGPoint.zero
         var size = CGSize.zero
         AXValueGetValue(posRef as! AXValue, .cgPoint, &origin)
@@ -69,7 +76,9 @@ enum WindowMover {
     // answer that does not change, and the animator asks it twice per window
     // per tick at 120Hz. collectCurrentAXWindows already probes it.
     static func setPosition(_ window: AXUIElement, to origin: CGPoint, assumeSettable: Bool = false) throws {
-        guard assumeSettable || AX.isSettable(window, kAXPositionAttribute as String) else { throw MoveError.positionNotSettable }
+        guard assumeSettable || AX.isSettable(window, kAXPositionAttribute as String) else {
+            throw MoveError.positionNotSettable
+        }
         var origin = origin
         guard let posVal = AXValueCreate(.cgPoint, &origin) else { return }
         let posErr = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posVal)
@@ -77,12 +86,15 @@ enum WindowMover {
     }
 
     static func setFrame(_ window: AXUIElement, to frame: CGRect) throws {
-        guard AX.isSettable(window, kAXPositionAttribute as String) else { throw MoveError.positionNotSettable }
+        guard AX.isSettable(window, kAXPositionAttribute as String) else {
+            throw MoveError.positionNotSettable
+        }
         guard AX.isSettable(window, kAXSizeAttribute as String) else { throw MoveError.sizeNotSettable }
 
         var origin = frame.origin
         var size = frame.size
-        guard let posVal = AXValueCreate(.cgPoint, &origin), let sizeVal = AXValueCreate(.cgSize, &size) else { return }
+        guard let posVal = AXValueCreate(.cgPoint, &origin), let sizeVal = AXValueCreate(.cgSize, &size)
+        else { return }
 
         // Position first, then size - some apps clamp size relative to the
         // window's current position, so setting position first reduces

@@ -82,22 +82,23 @@ final class MouseDragController {
 
     func start() {
         let mask: CGEventMask =
-            (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.leftMouseDragged.rawValue) |
-            (1 << CGEventType.leftMouseUp.rawValue) |
-            (1 << CGEventType.rightMouseDown.rawValue) | (1 << CGEventType.rightMouseDragged.rawValue) |
-            (1 << CGEventType.rightMouseUp.rawValue) |
-            (1 << CGEventType.scrollWheel.rawValue) |
-            (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.otherMouseUp.rawValue)
+            (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.leftMouseDragged.rawValue)
+            | (1 << CGEventType.leftMouseUp.rawValue) | (1 << CGEventType.rightMouseDown.rawValue)
+            | (1 << CGEventType.rightMouseDragged.rawValue) | (1 << CGEventType.rightMouseUp.rawValue)
+            | (1 << CGEventType.scrollWheel.rawValue) | (1 << CGEventType.otherMouseDown.rawValue)
+            | (1 << CGEventType.otherMouseUp.rawValue)
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
             let controller = Unmanaged<MouseDragController>.fromOpaque(refcon).takeUnretainedValue()
             // The tap's run loop source lives on the main run loop.
             return MainActor.assumeIsolated { controller.handle(type: type, event: event) }
         }
-        guard let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap, place: .headInsertEventTap, options: .defaultTap,
-            eventsOfInterest: mask, callback: callback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
+        guard
+            let tap = CGEvent.tapCreate(
+                tap: .cghidEventTap, place: .headInsertEventTap, options: .defaultTap,
+                eventsOfInterest: mask, callback: callback,
+                userInfo: Unmanaged.passUnretained(self).toOpaque())
+        else {
             print("[drag] CGEventTap creation failed - Mod+drag disabled")
             return
         }
@@ -140,8 +141,8 @@ final class MouseDragController {
                 if (dx != 0 || dy != 0), onScroll?(dx, dy, event.location) == true { return nil }
                 return Unmanaged.passUnretained(event)
             }
-            let dy = event.getIntegerValueField(.scrollWheelEventDeltaAxis1) // vertical
-            let dx = event.getIntegerValueField(.scrollWheelEventDeltaAxis2) // horizontal
+            let dy = event.getIntegerValueField(.scrollWheelEventDeltaAxis1)  // vertical
+            let dx = event.getIntegerValueField(.scrollWheelEventDeltaAxis2)  // horizontal
             if dx != 0 || dy != 0, Date().timeIntervalSince(lastWheelFire) > 0.15 {
                 lastWheelFire = Date()
                 var mods: Set<String> = ["mod"]
@@ -150,7 +151,7 @@ final class MouseDragController {
                 let dir = abs(dy) >= abs(dx) ? (dy > 0 ? "up" : "down") : (dx > 0 ? "right" : "left")
                 onWheel?(NigiriConfig.bindingKey(mods: mods, suffix: dir))
             }
-            return nil // consumed while Mod is held
+            return nil  // consumed while Mod is held
         case .otherMouseDown:
             // Buttons 2+ : middle, then back/forward on the usual mice.
             let number = event.getIntegerValueField(.mouseEventButtonNumber)

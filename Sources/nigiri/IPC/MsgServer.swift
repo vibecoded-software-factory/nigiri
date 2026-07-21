@@ -48,25 +48,27 @@ final class MsgServer {
             return
         }
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
-        source.setEventHandler { [weak self] in MainActor.assumeIsolated {
-            let connection = accept(fd, nil, nil)
-            guard connection >= 0 else { return }
-            // NON-BLOCKING from the start. macOS does not inherit O_NONBLOCK
-            // across accept(2) and libdispatch does not set it on a read
-            // source's fd either (measured: the accepted fd reported
-            // O_NONBLOCK=false), so every write below was a BLOCKING write on
-            // the main thread. Both users of that thread were mis-served: the
-            // request path's bounded wait could never trigger (write never
-            // returns EAGAIN, so its deadline and poll were dead code), and a
-            // client that is alive but not draining - `nigiri msg windows`
-            // piped into a pager nobody advances, a process stopped with
-            // Ctrl+Z - would fill the socket buffer and then freeze the
-            // animator, the Carbon binds, the mouse tap and every AX
-            // notification until it went away.
-            let flags = fcntl(connection, F_GETFL, 0)
-            if flags != -1 { _ = fcntl(connection, F_SETFL, flags | O_NONBLOCK) }
-            self?.serve(connection)
-        } }
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                let connection = accept(fd, nil, nil)
+                guard connection >= 0 else { return }
+                // NON-BLOCKING from the start. macOS does not inherit O_NONBLOCK
+                // across accept(2) and libdispatch does not set it on a read
+                // source's fd either (measured: the accepted fd reported
+                // O_NONBLOCK=false), so every write below was a BLOCKING write on
+                // the main thread. Both users of that thread were mis-served: the
+                // request path's bounded wait could never trigger (write never
+                // returns EAGAIN, so its deadline and poll were dead code), and a
+                // client that is alive but not draining - `nigiri msg windows`
+                // piped into a pager nobody advances, a process stopped with
+                // Ctrl+Z - would fill the socket buffer and then freeze the
+                // animator, the Carbon binds, the mouse tap and every AX
+                // notification until it went away.
+                let flags = fcntl(connection, F_GETFL, 0)
+                if flags != -1 { _ = fcntl(connection, F_SETFL, flags | O_NONBLOCK) }
+                self?.serve(connection)
+            }
+        }
         source.resume()
         listenSource = source
     }
@@ -74,25 +76,27 @@ final class MsgServer {
     private func serve(_ connection: Int32) {
         var buffer = Data()
         let source = DispatchSource.makeReadSource(fileDescriptor: connection, queue: .main)
-        source.setEventHandler { [weak self] in MainActor.assumeIsolated {
-            guard let self else { return }
-            var chunk = [UInt8](repeating: 0, count: 4096)
-            let n = read(connection, &chunk, 4096)
-            guard n > 0 else { self.drop(connection); return }
-            buffer.append(contentsOf: chunk[0..<n])
-            guard let newline = buffer.firstIndex(of: 0x0A) else { return }
-            let request = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
-                .trimmingCharacters(in: .whitespaces)
-            if request == "event-stream" {
-                self.streamFDs.insert(connection)
-                self.send(connection, "{\"event\":\"subscribed\"}")
-                // the read source stays alive: its EOF is how we learn the
-                // subscriber went away
-            } else {
-                self.sendFully(connection, self.onRequest?(request) ?? "{\"error\":\"no handler\"}")
-                self.drop(connection)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                var chunk = [UInt8](repeating: 0, count: 4096)
+                let n = read(connection, &chunk, 4096)
+                guard n > 0 else { self.drop(connection); return }
+                buffer.append(contentsOf: chunk[0..<n])
+                guard let newline = buffer.firstIndex(of: 0x0A) else { return }
+                let request = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
+                    .trimmingCharacters(in: .whitespaces)
+                if request == "event-stream" {
+                    self.streamFDs.insert(connection)
+                    self.send(connection, "{\"event\":\"subscribed\"}")
+                    // the read source stays alive: its EOF is how we learn the
+                    // subscriber went away
+                } else {
+                    self.sendFully(connection, self.onRequest?(request) ?? "{\"error\":\"no handler\"}")
+                    self.drop(connection)
+                }
             }
-        } }
+        }
         source.setCancelHandler { close(connection) }
         source.resume()
         connectionSources[connection] = source
@@ -143,7 +147,7 @@ final class MsgServer {
         // blocking write would then freeze the whole window manager until
         // that client died.
         return text.utf8CString.withUnsafeBufferPointer { buf in
-            write(fd, buf.baseAddress, buf.count - 1) == buf.count - 1 // -1: not the NUL
+            write(fd, buf.baseAddress, buf.count - 1) == buf.count - 1  // -1: not the NUL
         }
     }
 

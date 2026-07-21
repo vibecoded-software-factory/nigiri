@@ -7,8 +7,8 @@ import Foundation
 extension TilingEngine {
     enum ShotKind {
         case interactive  // niri's `screenshot`: pick a region
-        case screen       // `screenshot-screen`
-        case window       // `screenshot-window`: the focused window
+        case screen  // `screenshot-screen`
+        case window  // `screenshot-window`: the focused window
     }
 
     // screenshot-path with strftime placeholders, ~ expanded. An empty path
@@ -34,7 +34,8 @@ extension TilingEngine {
             // No -l <windowid>: the AX API never exposes the CGWindowID, so
             // the focused window is captured by its rect instead.
             guard let window = focusedManagedWindow(),
-                  let frame = WindowMover.currentFrame(window.axElement) else {
+                let frame = WindowMover.currentFrame(window.axElement)
+            else {
                 print("screenshot-window: no hay ventana enfocada")
                 return
             }

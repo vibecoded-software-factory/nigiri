@@ -43,8 +43,9 @@ extension TilingEngine {
         case .newColumn(let index):
             // A column-shaped slab, the width the new column would get,
             // centred on the gap it would open.
-            let width = ColumnLayoutEngine.width(forProportion: ColumnLayoutEngine.defaultColumnWidth,
-                                                 usableWidth: usableWidth)
+            let width = ColumnLayoutEngine.width(
+                forProportion: ColumnLayoutEngine.defaultColumnWidth,
+                usableWidth: usableWidth)
             let x: CGFloat
             if index < frames.count, let first = frames[index].first {
                 x = first.minX - gap / 2 - width / 2
@@ -53,8 +54,12 @@ extension TilingEngine {
             } else {
                 x = screenFrame.minX + gap
             }
-            return (position, CGRect(x: x, y: screenFrame.minY + gap,
-                                     width: width, height: screenFrame.height - 2 * gap))
+            return (
+                position,
+                CGRect(
+                    x: x, y: screenFrame.minY + gap,
+                    width: width, height: screenFrame.height - 2 * gap)
+            )
         case .inColumn(let columnIndex, let row):
             let columnFrames = frames[columnIndex]
             guard let reference = columnFrames.first else { return nil }
@@ -76,15 +81,20 @@ extension TilingEngine {
     // Applies the drop. Returns whether the model changed.
     @discardableResult
     func dropWindow(_ window: ManagedWindow, at position: ColumnLayoutEngine.InsertPosition) -> Bool {
-        guard let sourceColumnIndex = workspace.columns.firstIndex(where: { $0.windows.contains { $0 === window } }),
-              let sourceRow = workspace.columns[sourceColumnIndex].windows.firstIndex(where: { $0 === window })
+        guard
+            let sourceColumnIndex = workspace.columns.firstIndex(where: {
+                $0.windows.contains { $0 === window }
+            }),
+            let sourceRow = workspace.columns[sourceColumnIndex].windows.firstIndex(where: { $0 === window })
         else { return false }
         let source = workspace.columns[sourceColumnIndex]
 
         switch position {
         case .newColumn(var index):
             // Already alone in a column that is exactly there: nothing to do.
-            if source.windows.count == 1, index == sourceColumnIndex || index == sourceColumnIndex + 1 { return false }
+            if source.windows.count == 1, index == sourceColumnIndex || index == sourceColumnIndex + 1 {
+                return false
+            }
             source.removeWindow(at: sourceRow)
             source.cachedHeights = nil
             if source.windows.isEmpty {

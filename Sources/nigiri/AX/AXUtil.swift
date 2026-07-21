@@ -47,7 +47,8 @@ enum AX {
     static func element(_ element: AXUIElement, _ name: String) -> AXUIElement? {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &ref) == .success,
-              let ref, CFGetTypeID(ref) == AXUIElementGetTypeID() else { return nil }
+            let ref, CFGetTypeID(ref) == AXUIElementGetTypeID()
+        else { return nil }
         return (ref as! AXUIElement)
     }
 

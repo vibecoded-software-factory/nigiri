@@ -44,7 +44,9 @@ extension NigiriConfig {
             if c == "\"" {
                 let (value, next, terminated) = readQuoted(chars, from: i)
                 if !terminated {
-                    print("[config] comilla sin cerrar en la linea \(lineOf(i)): se descarta el resto del archivo")
+                    print(
+                        "[config] comilla sin cerrar en la linea \(lineOf(i)): se descarta el resto del archivo"
+                    )
                 }
                 current += value
                 if value.isEmpty { tokens.append("") }
@@ -62,8 +64,12 @@ extension NigiriConfig {
                     var depth = 1
                     i += 2
                     while i < chars.count, depth > 0 {
-                        if chars[i] == "/", i + 1 < chars.count, chars[i + 1] == "*" { depth += 1; i += 2; continue }
-                        if chars[i] == "*", i + 1 < chars.count, chars[i + 1] == "/" { depth -= 1; i += 2; continue }
+                        if chars[i] == "/", i + 1 < chars.count, chars[i + 1] == "*" {
+                            depth += 1; i += 2; continue
+                        }
+                        if chars[i] == "*", i + 1 < chars.count, chars[i + 1] == "/" {
+                            depth -= 1; i += 2; continue
+                        }
                         i += 1
                     }
                     if depth > 0 { print("[config] comentario /* sin cerrar en la linea \(lineOf(i)))") }
@@ -175,7 +181,7 @@ extension NigiriConfig {
                 continue
             }
             i += 1
-            while i < tokens.count, tokens[i] == "\n" { i += 1 }   // `/-` on its own line
+            while i < tokens.count, tokens[i] == "\n" { i += 1 }  // `/-` on its own line
             if i < tokens.count, tokens[i] == "{" {
                 i = endOfBlock(i)
             } else if atLineStart {
@@ -196,7 +202,9 @@ extension NigiriConfig {
     // tokenizing, so nested sections parse as if inlined. Paths are
     // relative to the including file's directory; a depth cap and a
     // visited set stop runaway/cyclic includes.
-    static func expandIncludes(_ text: String, baseDir: String, depth: Int = 0, visited: inout Set<String>) -> String {
+    static func expandIncludes(
+        _ text: String, baseDir: String, depth: Int = 0, visited: inout Set<String>
+    ) -> String {
         guard depth < 20 else { return "" }
         var out: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -205,17 +213,23 @@ extension NigiriConfig {
                 // include "path" - the path is the quoted token.
                 let inner = trimmed.dropFirst("include".count).trimmingCharacters(in: .whitespaces)
                 let rel = inner.trimmingCharacters(in: CharacterSet(charactersIn: "\" \t"))
-                let resolved = (rel as NSString).isAbsolutePath ? rel : (baseDir as NSString).appendingPathComponent(rel)
-                let real = (try? FileManager.default.destinationOfSymbolicLink(atPath: resolved)).map {
-                    ($0 as NSString).isAbsolutePath ? $0 : (baseDir as NSString).appendingPathComponent($0)
-                } ?? resolved
+                let resolved =
+                    (rel as NSString).isAbsolutePath ? rel : (baseDir as NSString).appendingPathComponent(rel)
+                let real =
+                    (try? FileManager.default.destinationOfSymbolicLink(atPath: resolved)).map {
+                        ($0 as NSString).isAbsolutePath
+                            ? $0 : (baseDir as NSString).appendingPathComponent($0)
+                    } ?? resolved
                 if visited.contains(real) { print("[config] skipping already-included \(rel)"); continue }
                 visited.insert(real)
                 guard let included = try? String(contentsOfFile: real, encoding: .utf8) else {
                     print("[config] include not found: \(rel)")
                     continue
                 }
-                out.append(expandIncludes(included, baseDir: (real as NSString).deletingLastPathComponent, depth: depth + 1, visited: &visited))
+                out.append(
+                    expandIncludes(
+                        included, baseDir: (real as NSString).deletingLastPathComponent, depth: depth + 1,
+                        visited: &visited))
             } else {
                 out.append(String(line))
             }
@@ -227,11 +241,15 @@ extension NigiriConfig {
         guard let rawText = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         // Resolve includes relative to the config's real directory (follow
         // the symlink so dotfiles-hosted configs resolve their siblings).
-        let realPath = (try? FileManager.default.destinationOfSymbolicLink(atPath: path)).map {
-            ($0 as NSString).isAbsolutePath ? $0 : ((path as NSString).deletingLastPathComponent as NSString).appendingPathComponent($0)
-        } ?? path
+        let realPath =
+            (try? FileManager.default.destinationOfSymbolicLink(atPath: path)).map {
+                ($0 as NSString).isAbsolutePath
+                    ? $0
+                    : ((path as NSString).deletingLastPathComponent as NSString).appendingPathComponent($0)
+            } ?? path
         var visited: Set<String> = [realPath]
-        let text = expandIncludes(rawText, baseDir: (realPath as NSString).deletingLastPathComponent, visited: &visited)
+        let text = expandIncludes(
+            rawText, baseDir: (realPath as NSString).deletingLastPathComponent, visited: &visited)
         return parse(text)
     }
 
@@ -324,7 +342,9 @@ extension NigiriConfig {
                         if k == "from", let c = parseColor(v) { config.ringFrom = c }
                         if k == "to", let c = parseColor(v) { config.ringTo = c }
                         // angle: only niri's 45 is implemented; stated, not silent
-                        if k == "angle", v != "45" { print("[config] active-gradient angle: only 45 is implemented") }
+                        if k == "angle", v != "45" {
+                            print("[config] active-gradient angle: only 45 is implemented")
+                        }
                     }
                 case "active-color":
                     if let c = parseColor(parts.last ?? "") { config.ringFrom = c; config.ringTo = c }
@@ -369,7 +389,9 @@ extension NigiriConfig {
                     switch parts[0] {
                     case "off": isOff = true
                     case "spring":
-                        var stiffness: Double = 1000, damping: Double = 1, epsilon: Double = 0.0001
+                        var stiffness: Double = 1000
+                        var damping: Double = 1
+                        var epsilon: Double = 0.0001
                         for (k, v) in keyValues(parts) {
                             switch k {
                             case "stiffness": stiffness = Double(v) ?? stiffness
@@ -394,7 +416,9 @@ extension NigiriConfig {
                     // Shaders are compositor rendering; niri's own configs
                     // carry them, and skipping the block quietly is right.
                     case "custom-shader":
-                        if next() == "{" { i += 1; skipUnknownBlock(named: "custom-shader", context: "animation") }
+                        if next() == "{" {
+                            i += 1; skipUnknownBlock(named: "custom-shader", context: "animation")
+                        }
                     default: break
                     }
                 }
@@ -403,7 +427,8 @@ extension NigiriConfig {
                 } else if let curve {
                     config.animations[t] = curve
                 } else if let durationMs {
-                    config.animations[t] = .easing(Easing(durationMs: durationMs, curve: namedCurve ?? .easeOutCubic))
+                    config.animations[t] = .easing(
+                        Easing(durationMs: durationMs, curve: namedCurve ?? .easeOutCubic))
                 } else if namedCurve != nil {
                     // A curve with no duration cannot become an animation:
                     // there is no default-duration table here (niri's lives in
@@ -431,7 +456,9 @@ extension NigiriConfig {
                 switch t {
                 case "zoom":
                     let parts = statement(firstToken: t)
-                    if let v = Double(parts.last ?? "") { config.overviewZoom = CGFloat(min(0.95, max(0.1, v))) }
+                    if let v = Double(parts.last ?? "") {
+                        config.overviewZoom = CGFloat(min(0.95, max(0.1, v)))
+                    }
                 case "backdrop-color":
                     let parts = statement(firstToken: t)
                     if let c = parseColor(parts.last ?? "") {
@@ -440,8 +467,11 @@ extension NigiriConfig {
                     }
                 case "workspace-shadow":
                     // Compositor rendering; skipped, not an error.
-                    if next() == "{" { i += 1; skipUnknownBlock(named: t, context: "overview") }
-                    else { _ = statement(firstToken: t) }
+                    if next() == "{" {
+                        i += 1; skipUnknownBlock(named: t, context: "overview")
+                    } else {
+                        _ = statement(firstToken: t)
+                    }
                 default:
                     print("[config] unknown overview key: \(t)")
                     _ = statement(firstToken: t)
@@ -481,16 +511,17 @@ extension NigiriConfig {
                 case "off": config.shadowOn = false
                 case "on": config.shadowOn = true
                 case "softness": if let v = Double(parts.last ?? "") { config.shadowSoftness = CGFloat(v) }
-                case "spread": break // folded into softness by CALayer's model
+                case "spread": break  // folded into softness by CALayer's model
                 case "offset":
-                    var dx: CGFloat = 0, dy: CGFloat = 0
+                    var dx: CGFloat = 0
+                    var dy: CGFloat = 0
                     for (k, v) in keyValues(parts) {
                         if k == "x", let n = Double(v) { dx = CGFloat(n) }
                         if k == "y", let n = Double(v) { dy = CGFloat(n) }
                     }
                     config.shadowOffset = CGSize(width: dx, height: dy)
                 case "color": if let c = parseColor(parts.last ?? "") { config.shadowColor = c }
-                case "draw-behind-window": break // always true here: it is a glow
+                case "draw-behind-window": break  // always true here: it is a glow
                 default: print("[config] unknown shadow key: \(parts[0])")
                 }
             }
@@ -572,7 +603,8 @@ extension NigiriConfig {
                 switch parts[0] {
                 case "off": config.borderWidth = 0
                 case "width": if let v = Double(parts.last ?? "") { config.borderWidth = CGFloat(v) }
-                case "inactive-color": if let c = parseColor(parts.last ?? "") { config.borderInactiveColor = c }
+                case "inactive-color":
+                    if let c = parseColor(parts.last ?? "") { config.borderInactiveColor = c }
                 case "active-color", "active-gradient":
                     print("[config] border: the ACTIVE window wears the focus-ring - configure that instead")
                 default: print("[config] unknown border key: \(parts[0])")
@@ -598,7 +630,9 @@ extension NigiriConfig {
                         config.modKey = mods
                         NigiriConfig.modKey = mods
                         if !config.binds.isEmpty {
-                            print("[config] mod-key declarado despues de binds{}: los ya parseados quedaron con el anterior")
+                            print(
+                                "[config] mod-key declarado despues de binds{}: los ya parseados quedaron con el anterior"
+                            )
                         }
                     } else {
                         print("[config] mod-key desconocido: \(parts.last ?? "")")
@@ -606,8 +640,11 @@ extension NigiriConfig {
                 case "focus-follows-mouse": config.focusFollowsMouse = true
                 case "warp-mouse-to-focus": config.warpMouseToFocus = true
                 default:
-                    if next() == "{" { i += 1; skipUnknownBlock(named: parts[0], context: "input section") }
-                    else { print("[config] unknown input key: \(parts[0])") }
+                    if next() == "{" {
+                        i += 1; skipUnknownBlock(named: parts[0], context: "input section")
+                    } else {
+                        print("[config] unknown input key: \(parts[0])")
+                    }
                 }
             }
         }
@@ -654,12 +691,14 @@ extension NigiriConfig {
                 // slips in and silently never fires.
                 let written = parts[0].lowercased().split(separator: "-").map(String.init)
                 guard let direction = written.last,
-                      ["up", "down", "left", "right"].contains(direction) else {
+                    ["up", "down", "left", "right"].contains(direction)
+                else {
                     print("[config] wheel: \(parts[0]) no termina en up/down/left/right - se ignora")
                     continue
                 }
                 let mods = Set(written.dropLast().compactMap { NigiriConfig.canonicalModifier($0) })
-                config.wheelBindings[NigiriConfig.bindingKey(mods: mods.union(["mod"]), suffix: direction)] = action
+                config.wheelBindings[NigiriConfig.bindingKey(mods: mods.union(["mod"]), suffix: direction)] =
+                    action
             }
         }
 
@@ -713,8 +752,11 @@ extension NigiriConfig {
                 case "border":
                     if next() == "{" { i += 1; parseBorder() }
                 default:
-                    if next() == "{" { i += 1; skipUnknownBlock(named: t, context: "layout section") }
-                    else { print("[config] unknown layout key: \(t)"); _ = statement(firstToken: t) }
+                    if next() == "{" {
+                        i += 1; skipUnknownBlock(named: t, context: "layout section")
+                    } else {
+                        print("[config] unknown layout key: \(t)"); _ = statement(firstToken: t)
+                    }
                 }
             }
         }
@@ -745,8 +787,11 @@ extension NigiriConfig {
                 case "open-on-workspace":
                     let parts = statement(firstToken: t)
                     let arg = parts.dropFirst().first ?? ""
-                    if let n = Int(arg) { rule.openOnWorkspace = n }
-                    else if !arg.isEmpty { rule.openOnWorkspaceName = arg }
+                    if let n = Int(arg) {
+                        rule.openOnWorkspace = n
+                    } else if !arg.isEmpty {
+                        rule.openOnWorkspaceName = arg
+                    }
                 case "open-maximized":
                     let parts = statement(firstToken: t)
                     rule.openMaximized = parts.last == "true"
@@ -829,7 +874,8 @@ extension NigiriConfig {
                     return "'" + part.replacingOccurrences(of: "'", with: "'\\''") + "'"
                 }.joined(separator: " ")
                 if mods.isEmpty {
-                    print("[config] bind \(t) no lleva modificador: esa tecla queda tomada en todo el sistema")
+                    print(
+                        "[config] bind \(t) no lleva modificador: esa tecla queda tomada en todo el sistema")
                 }
                 var bind = Bind(combo: t, keyCode: keyCode, modifiers: mods, action: rejoined)
                 for p in props {
@@ -842,7 +888,7 @@ extension NigiriConfig {
                     // overlay listed the literal word "null" as the title.
                     case "hotkey-overlay-title":
                         if kv[1] == "null" { bind.hiddenFromOverlay = true } else { bind.title = kv[1] }
-                    default: break // repeat / allow-when-locked / allow-inhibiting: inert on macOS
+                    default: break  // repeat / allow-when-locked / allow-inhibiting: inert on macOS
                     }
                 }
                 config.binds.append(bind)
@@ -877,8 +923,11 @@ extension NigiriConfig {
             case "wheel":
                 if next() == "{" { i += 1; parseWheel() }
             default:
-                if next() == "{" { i += 1; skipUnknownBlock(named: t, context: "top-level section") }
-                else { print("[config] unknown top-level line: \(t)"); _ = statement(firstToken: t) }
+                if next() == "{" {
+                    i += 1; skipUnknownBlock(named: t, context: "top-level section")
+                } else {
+                    print("[config] unknown top-level line: \(t)"); _ = statement(firstToken: t)
+                }
             }
         }
         // Only when the WHOLE list is empty, like niri (layout.rs): it used
@@ -888,7 +937,9 @@ extension NigiriConfig {
             config.presetColumnSizes = [.proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0)]
         }
         if config.presetWindowHeightSizes.isEmpty {
-            config.presetWindowHeightSizes = [.proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0)]
+            config.presetWindowHeightSizes = [
+                .proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0),
+            ]
         }
         return config
     }

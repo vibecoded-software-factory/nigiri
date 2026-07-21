@@ -86,10 +86,13 @@ enum WindowCapture {
             // scale that to fill: a backdrop is decoration, so cropping it is
             // free, while a seam is not.
             let furniture = ["Finder", "WindowManager", "Dock"]
-            if let painter = desktop
+            if let painter =
+                desktop
                 .filter({ !furniture.contains($0.owningApplication?.applicationName ?? "") })
                 .max(by: { $0.windowLayer < $1.windowLayer }),
-               painter.frame.width < display.frame.width - 1 || painter.frame.height < display.frame.height - 1 {
+                painter.frame.width < display.frame.width - 1
+                    || painter.frame.height < display.frame.height - 1
+            {
                 config.sourceRect = painter.frame
                 config.width = Int(painter.frame.width)
                 config.height = Int(painter.frame.height)
@@ -107,8 +110,10 @@ enum WindowCapture {
     // five-window refresh used to cost, repeated on every single tick for a
     // mapping that only changes when windows open, close or move.
     @available(macOS 14.0, *)
-    static func resolve(_ requests: [(pid: pid_t, title: String, frame: CGRect)],
-                        completion: @escaping ([Int: SCWindow]) -> Void) {
+    static func resolve(
+        _ requests: [(pid: pid_t, title: String, frame: CGRect)],
+        completion: @escaping ([Int: SCWindow]) -> Void
+    ) {
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, error in
             guard let content else {
                 print("[overview] shareable content failed: \(error?.localizedDescription ?? "?")")
@@ -123,7 +128,9 @@ enum WindowCapture {
                         && abs($0.frame.origin.y - request.frame.origin.y) < 5
                         && abs($0.frame.width - request.frame.width) < 5
                 }
-                guard let scWindow = candidates.first(where: { $0.title == request.title }) ?? candidates.first else { continue }
+                guard
+                    let scWindow = candidates.first(where: { $0.title == request.title }) ?? candidates.first
+                else { continue }
                 resolved[index] = scWindow
             }
             let result = resolved
@@ -143,8 +150,10 @@ enum WindowCapture {
     // capture pipeline scales inside WindowServer, so asking for thumbnail
     // pixels means the full-resolution ones are never rendered or moved.
     @available(macOS 14.0, *)
-    static func capture(resolved: [Int: SCWindow], sizes: [Int: CGSize] = [:],
-                        completion: @escaping ([Int: CVPixelBuffer]) -> Void) {
+    static func capture(
+        resolved: [Int: SCWindow], sizes: [Int: CGSize] = [:],
+        completion: @escaping ([Int: CVPixelBuffer]) -> Void
+    ) {
         guard !resolved.isEmpty else { completion([:]); return }
         // OFF the main thread: captureImage does its setup - including
         // building an SCStream, audio clock and all - synchronously on
@@ -153,42 +162,43 @@ enum WindowCapture {
         // time, several times a second. That is the overview's stutter: not
         // the capture being slow, but the capture being in the way.
         captureQueue.async {
-        let group = DispatchGroup()
-        var buffers: [Int: CVPixelBuffer] = [:]
-        let lock = NSLock()
-        for (index, scWindow) in resolved {
-            let config = SCStreamConfiguration()
-            // The tile's pixel size when the caller knows it; otherwise the
-            // window scaled to the thumbnail ceiling.
-            if let size = sizes[index] {
-                config.width = max(1, Int(size.width))
-                config.height = max(1, Int(size.height))
-            } else {
-                let scale = min(1, WindowCapture.thumbnailMaxSide / max(scWindow.frame.width, scWindow.frame.height))
-                config.width = max(1, Int(scWindow.frame.width * scale))
-                config.height = max(1, Int(scWindow.frame.height * scale))
-            }
-            config.showsCursor = false
-            // The window's shadow is a wide transparent margin around the
-            // real pixels, and the global clip is what rounds the corners:
-            // both waste tile area on nothing.
-            config.ignoreShadowsSingleWindow = true
-            config.ignoreGlobalClipSingleWindow = true
-            config.pixelFormat = kCVPixelFormatType_32BGRA
-            group.enter()
-            SCScreenshotManager.captureSampleBuffer(
-                contentFilter: SCContentFilter(desktopIndependentWindow: scWindow),
-                configuration: config
-            ) { sampleBuffer, _ in
-                if let sampleBuffer, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                    lock.lock()
-                    buffers[index] = pixelBuffer
-                    lock.unlock()
+            let group = DispatchGroup()
+            var buffers: [Int: CVPixelBuffer] = [:]
+            let lock = NSLock()
+            for (index, scWindow) in resolved {
+                let config = SCStreamConfiguration()
+                // The tile's pixel size when the caller knows it; otherwise the
+                // window scaled to the thumbnail ceiling.
+                if let size = sizes[index] {
+                    config.width = max(1, Int(size.width))
+                    config.height = max(1, Int(size.height))
+                } else {
+                    let scale = min(
+                        1, WindowCapture.thumbnailMaxSide / max(scWindow.frame.width, scWindow.frame.height))
+                    config.width = max(1, Int(scWindow.frame.width * scale))
+                    config.height = max(1, Int(scWindow.frame.height * scale))
                 }
-                group.leave()
+                config.showsCursor = false
+                // The window's shadow is a wide transparent margin around the
+                // real pixels, and the global clip is what rounds the corners:
+                // both waste tile area on nothing.
+                config.ignoreShadowsSingleWindow = true
+                config.ignoreGlobalClipSingleWindow = true
+                config.pixelFormat = kCVPixelFormatType_32BGRA
+                group.enter()
+                SCScreenshotManager.captureSampleBuffer(
+                    contentFilter: SCContentFilter(desktopIndependentWindow: scWindow),
+                    configuration: config
+                ) { sampleBuffer, _ in
+                    if let sampleBuffer, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                        lock.lock()
+                        buffers[index] = pixelBuffer
+                        lock.unlock()
+                    }
+                    group.leave()
+                }
             }
-        }
-        group.notify(queue: .main) { completion(buffers) }
+            group.notify(queue: .main) { completion(buffers) }
         }
     }
 
