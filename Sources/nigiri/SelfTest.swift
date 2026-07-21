@@ -852,6 +852,43 @@ enum SelfTest {
             of: [(pid: 5, stackFrame.offsetBy(dx: 1, dy: -1))], in: stack)
         expectEqual(withinTolerance[0], 1, "a 1pt difference is still the same window")
 
+        // TilingEngine.candidates(from:in:): the animator hoists the AX read
+        // (DecorationInfo) ONCE, then recomputes depths against a FRESH stack
+        // each tick - because the real z-order changes AFTER the animation
+        // starts (focusColumn runs the animation from reflow, then activates
+        // and raises the floating layer). A frozen snapshot left a floating
+        // window's border painted over the window just focused over it, the
+        // "floating frame leaking while you move" reported under the keyboard.
+        // This locks the pure half: same info, two different stacks, two
+        // different depth verdicts.
+        let floatInfo = TilingEngine.DecorationInfo(
+            pid: 2, frame: CGRect(x: 420, y: 120, width: 200, height: 200), minimized: false)
+        let tiledInfo = TilingEngine.DecorationInfo(
+            pid: 1, frame: CGRect(x: 400, y: 100, width: 400, height: 400), minimized: false)
+        let floatFront = [
+            WindowStacking.Entry(pid: 2, frame: floatInfo.frame),
+            WindowStacking.Entry(pid: 1, frame: tiledInfo.frame),
+        ]
+        let tiledFront = [
+            WindowStacking.Entry(pid: 1, frame: tiledInfo.frame),
+            WindowStacking.Entry(pid: 2, frame: floatInfo.frame),
+        ]
+        let whenFloatFront = TilingEngine.candidates(from: [floatInfo], in: floatFront)
+        expectEqual(whenFloatFront.first?.depth, 0, "floating on top resolves to depth 0")
+        let whenTiledFront = TilingEngine.candidates(from: [floatInfo], in: tiledFront)
+        expectEqual(
+            whenTiledFront.first?.depth, 1, "the same window, tiled now in front, resolves to depth 1")
+        // And that verdict flips the border: shown when in front, hidden when
+        // the tiled window is raised over it - which is what the per-tick
+        // re-read delivers the instant macOS reorders.
+        let decoScreen2 = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        expect(
+            TilingEngine.decoratedFrames(whenTiledFront, occluders: tiledFront, screen: decoScreen2).isEmpty,
+            "floating behind the raised tiled window drops its border")
+        expect(
+            !TilingEngine.decoratedFrames(whenFloatFront, occluders: floatFront, screen: decoScreen2).isEmpty,
+            "and keeps it while it is genuinely on top")
+
         // REGRESSION (items 10 and 38): the pre-fullscreen home of a floating
         // window shared a slot with the workspace-switch stash, which overwrites
         // it with where the window is NOW - and during a fullscreen that is the

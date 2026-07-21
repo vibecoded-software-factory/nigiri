@@ -124,7 +124,17 @@ extension TilingEngine {
         }
         lastSelfInitiatedActivation = Date()
         WindowMover.focus(w.axElement, pid: w.pid)
-        raiseFloatingLayer(above: w)
+        // Raise the floating layer ONLY when focus is IN it. nigiri used to
+        // re-raise it on every focus, so moving through the tiled strip yanked
+        // a floating window above the columns on each step - it flashed
+        // forward "on every move", reported live. macOS cannot keep a
+        // background window above the ACTIVE one anyway (re-measured: AXRaise
+        // succeeds but the window stays put), so raising during tiled
+        // navigation only produced the flash and never niri's always-on-top.
+        // The floating layer now stays where it is while you move through
+        // tiles and comes forward only when you switch INTO it (focusing a
+        // floating window, or switch-focus-between-floating-and-tiling).
+        if workspace.isFloatingActive { raiseFloatingLayer(above: w) }
         // niri's warp-mouse-to-focus (input section, opt-in): the cursor
         // rides along to the newly-focused window's center.
         if warpMouseEnabled, let frame = WindowMover.currentFrame(w.axElement) {
@@ -303,22 +313,23 @@ extension TilingEngine {
         // floating ones a second time. With one hung app those blocking
         // reads froze the animation itself.
         //
-        // The stack is read once here too, and for the same reason: it costs
-        // a WindowServer round-trip (0.63ms average, 5.3ms worst) and cannot
-        // change under an animation nobody is clicking through. Both halves
-        // share the one snapshot so a window is never matched twice.
-        let stacking = trackRing ? WindowStacking.onScreen() : []
-        let staticDecorations =
+        // The STACK, unlike the frames, is NOT hoisted - it is re-read every
+        // tick (0.63ms average, a WindowServer round-trip, no AX). It has to
+        // be: focusColumn calls this animation from reflow() and only THEN
+        // runs focusCurrentColumn(), which activates the new window and
+        // raiseFloatingLayer()s the floating layer - so the real z-order
+        // changes AFTER this point and keeps settling as macOS reorders.
+        // A frozen snapshot taken here made the border pass believe a floating
+        // window was still in front for the whole animation, so its border
+        // painted across the window that had just been focused over it - the
+        // "floating frame leaking while you move" seen only under the keyboard,
+        // where the next keypress restarts the animation before the settle
+        // pass ever corrects it. The frames don't change under the animation;
+        // the stack does.
+        let staticInfo =
             trackRing
-            ? decorationCandidates(
-                excluding: anims.map { $0.window } + (focusedWindow.map { [$0] } ?? []),
-                stacking: stacking)
+            ? decorationInfo(excluding: anims.map { $0.window } + (focusedWindow.map { [$0] } ?? []))
             : []
-        let animatedDepths =
-            trackRing
-            ? WindowStacking.depths(
-                of: anims.map { (pid: $0.window.pid, frame: $0.lastWritten) }, in: stacking)
-            : [Int?](repeating: nil, count: anims.count)
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + tickInterval, repeating: tickInterval)
         timer.setEventHandler {
@@ -426,20 +437,23 @@ extension TilingEngine {
                     // whole set, so feeding it only the animated windows made
                     // every other border blink off for the animation's duration.
                     // The moving ones come from the frame just written, never an
-                    // AX read-back; the still ones from the hoisted snapshot.
-                    var candidates = staticDecorations
+                    // AX read-back; the still ones from the hoisted frames. Only
+                    // the DEPTHS are recomputed here, against a fresh stack read,
+                    // so a floating window drops its border the instant macOS
+                    // reorders it behind the newly focused window.
+                    let stacking = WindowStacking.onScreen()
+                    var candidates = TilingEngine.candidates(from: staticInfo, in: stacking)
+                    let movingDepths = WindowStacking.depths(
+                        of: anims.map { (pid: $0.window.pid, frame: $0.lastWritten) }, in: stacking)
                     for i in anims.indices where anims[i].window !== focusedWindow {
                         candidates.append(
                             TilingEngine.DecorationCandidate(
                                 frame: anims[i].lastWritten, minimized: false,
-                                depth: animatedDepths[i]))
+                                depth: movingDepths[i]))
                     }
-                    // Same rule as the settle pass, and now literally the same
+                    // Same rule as the settle pass, and literally the same
                     // function: minimized windows excluded, and a window whose
                     // border is hidden behind something in front of it drops it.
-                    // The occluder frames are the snapshot's: a window that is
-                    // itself moving carries a slightly stale frame here, and
-                    // the settle pass re-reads the stack anyway.
                     self.borders.update(
                         frames: TilingEngine.decoratedFrames(
                             candidates, occluders: stacking, screen: screen))

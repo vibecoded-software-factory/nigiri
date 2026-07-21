@@ -498,27 +498,44 @@ final class TilingEngine {
         }
     }
 
-    // The candidates of the active workspace, read from AX. The expensive
-    // half (two AX round-trips per window, plus one WindowServer read for the
-    // stack), kept apart so the animator can pay it ONCE for the windows that
-    // are not moving instead of once per 8.3ms tick.
+    // A window's decoration inputs BEFORE its depth: pid and frame (to match
+    // it against the stack) and whether it is minimized. This is the expensive
+    // half - two AX round-trips per window - so the animator reads it ONCE for
+    // the windows it is not moving, then recomputes only their depths per tick
+    // (a cheap WindowServer read) as the real z-order changes underneath.
+    struct DecorationInfo {
+        let pid: pid_t
+        let frame: CGRect
+        let minimized: Bool
+    }
+
+    func decorationInfo(excluding excluded: [ManagedWindow]) -> [DecorationInfo] {
+        workspace.allWindows.compactMap { w in
+            guard !excluded.contains(where: { $0 === w }), let frame = WindowMover.currentFrame(w.axElement)
+            else { return nil }
+            let minimized: Bool? = AX.attribute(w.axElement, kAXMinimizedAttribute as String)
+            return DecorationInfo(pid: w.pid, frame: frame, minimized: minimized == true)
+        }
+    }
+
+    // Info plus depth, resolved against a stack snapshot. Pure, so the depth
+    // matching stays covered by the selftest.
+    static func candidates(
+        from info: [DecorationInfo], in stacking: [WindowStacking.Entry]
+    )
+        -> [DecorationCandidate]
+    {
+        let depths = WindowStacking.depths(of: info.map { (pid: $0.pid, frame: $0.frame) }, in: stacking)
+        return info.enumerated().map { index, entry in
+            DecorationCandidate(frame: entry.frame, minimized: entry.minimized, depth: depths[index])
+        }
+    }
+
     func decorationCandidates(
         excluding excluded: [ManagedWindow], stacking: [WindowStacking.Entry]? = nil
     ) -> [DecorationCandidate] {
-        let live: [(window: ManagedWindow, frame: CGRect, minimized: Bool)] =
-            workspace.allWindows.compactMap { w in
-                guard !excluded.contains(where: { $0 === w }),
-                    let frame = WindowMover.currentFrame(w.axElement)
-                else { return nil }
-                let minimized: Bool? = AX.attribute(w.axElement, kAXMinimizedAttribute as String)
-                return (w, frame, minimized == true)
-            }
-        let depths = WindowStacking.depths(
-            of: live.map { (pid: $0.window.pid, frame: $0.frame) },
-            in: stacking ?? WindowStacking.onScreen())
-        return live.enumerated().map { index, entry in
-            DecorationCandidate(frame: entry.frame, minimized: entry.minimized, depth: depths[index])
-        }
+        Self.candidates(
+            from: decorationInfo(excluding: excluded), in: stacking ?? WindowStacking.onScreen())
     }
 
     func updateInactiveDecorations() {
