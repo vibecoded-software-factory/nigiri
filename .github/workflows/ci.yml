@@ -1,0 +1,36 @@
+name: build
+
+# The gate every change is held to, run by the machine instead of by trust:
+# a warning-free build and a green selftest. The selftest is pure logic - no
+# Accessibility grant, no windows, no display - which is what makes it
+# runnable on a CI box at all.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build (warnings are failures)
+        run: |
+          set -euo pipefail
+          swift build 2>&1 | tee /tmp/build.log
+          count=$(grep -c "warning:" /tmp/build.log || true)
+          if [ "$count" -ne 0 ]; then
+            echo "::error::$count compiler warning(s); this project builds clean"
+            grep "warning:" /tmp/build.log || true
+            exit 1
+          fi
+
+      - name: Selftest
+        run: .build/debug/nigiri selftest
+
+      - name: Release build
+        run: swift build -c release
