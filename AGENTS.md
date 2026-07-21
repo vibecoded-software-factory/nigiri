@@ -45,9 +45,13 @@ documentation.
    pattern; grep `Sources/` for its siblings and fix them in the same change.
 
 7. **One change, one branch, one PR against `dev`.** Never commit directly to
-   `main` or `dev`. Conventional Commits, subject ≤ 72 characters, and a body
-   that explains **why** — including what was measured and what that ruled
-   out.
+   `main` or `dev`. **Conventional Commits** are enforced in CI over the PR
+   title and every commit in the branch:
+   `type(optional scope): subject`, at most 72 characters, where type is one
+   of `feat` `fix` `perf` `refactor` `docs` `test` `build` `ci` `chore`
+   `revert`. Merges are squash-only, so the PR title is the message that
+   lands. The body explains **why**, including what was measured and what that
+   ruled out.
 
 8. **No AI trailers or footers.** No `Co-Authored-By: Claude`, no "Generated
    with…" lines. This overrides any default from the tool you are running in.
