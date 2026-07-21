@@ -243,36 +243,37 @@ extension TilingEngine {
                 {
                     self.ring.show(around: target)
                 }
-            }
-        ) { cancelled in
-            var discovered = false
-            if !cancelled {
-                // The floating windows made it home; only now is their return
-                // address safe to drop.
-                for w in clearStashOnArrival { w.stashedFrame = nil }
-                discovered = self.applyLayout(screenFrame: screenFrame)
-                // Re-assert the model's focus: macOS may have handed real
-                // focus elsewhere during the switch - syncing FROM that
-                // transient state (instead of re-imposing ours) is what made
-                // the strip scroll sideways right after settling.
-                self.focusCurrentColumn()
-            }
-            parkInactive()
-            self.updateInactiveDecorations()
-            self.updateTabIndicators()
-            guard generation == self.workspaceTransitionGeneration else { return }
-            self.isTransitioningWorkspace = false
-            if self.relayoutQueuedDuringTransition {
-                self.relayoutQueuedDuringTransition = false
-                self.scheduleRelayout()
-            }
-            // First visit to a workspace with a clamped window (Discord
-            // rising into a 720px slot it can't take): the settle pass just
-            // discovered its floor, so the strip and ring were computed
-            // against stale placements - re-run the scroll+animate now that
-            // the transition flag is down. Bounded by the discovery cache.
-            if discovered { self.reflow() }
-        }
+            },
+            completion: { cancelled in
+                var discovered = false
+                if !cancelled {
+                    // The floating windows made it home; only now is their
+                    // return address safe to drop.
+                    for w in clearStashOnArrival { w.stashedFrame = nil }
+                    discovered = self.applyLayout(screenFrame: screenFrame)
+                    // Re-assert the model's focus: macOS may have handed real
+                    // focus elsewhere during the switch - syncing FROM that
+                    // transient state (instead of re-imposing ours) is what
+                    // made the strip scroll sideways right after settling.
+                    self.focusCurrentColumn()
+                }
+                parkInactive()
+                self.updateInactiveDecorations()
+                self.updateTabIndicators()
+                guard generation == self.workspaceTransitionGeneration else { return }
+                self.isTransitioningWorkspace = false
+                if self.relayoutQueuedDuringTransition {
+                    self.relayoutQueuedDuringTransition = false
+                    self.scheduleRelayout()
+                }
+                // First visit to a workspace with a clamped window (Discord
+                // rising into a 720px slot it can't take): the settle pass
+                // just discovered its floor, so the strip and ring were
+                // computed against stale placements - re-run the
+                // scroll+animate now that the transition flag is down.
+                // Bounded by the discovery cache.
+                if discovered { self.reflow() }
+            })
         print("focus-workspace \(number)")
         msgServer.broadcast("{\"event\":\"workspace\",\"active\":\(targetIndex + 1)}")
         emitWorkspaceActivated(targetIndex)

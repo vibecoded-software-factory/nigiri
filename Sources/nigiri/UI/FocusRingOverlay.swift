@@ -63,7 +63,9 @@ final class FocusRingOverlay: NSObject {
         window.backgroundColor = .clear
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.animationBehavior = .none  // rule out any default AppKit window-move animation too, not just the layers'
+        // Rules out any default AppKit window-move animation too, not just
+        // the layers'.
+        window.animationBehavior = .none
         // .floating: above ordinary app windows (re-raised on every app
         // activation, below, so another regular window stealing focus can't
         // cover it) but BELOW system UI like Spotlight/Control

@@ -24,7 +24,9 @@ extension TilingEngine {
         }
         guard !workspace.columns.isEmpty else { return }
         workspace.moveColumnFocus(by: delta)
-        reflow()  // scrolls the strip to keep the newly-focused column in view; keeps the ring in sync every animation step
+        // Scrolls the strip to keep the newly-focused column in view, and
+        // keeps the ring in sync on every animation step.
+        reflow()
         focusCurrentColumn()
         print(
             "focus-column-\(delta < 0 ? "left" : "right") -> column \(workspace.focusedIndex) (\(describeFocus()))"

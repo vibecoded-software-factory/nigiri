@@ -125,8 +125,8 @@ if cliArgs.first == "move" {
 
 if cliArgs.first == "listen" {
     let listener = HotkeyListener()
-    let kVK_ANSI_9: CGKeyCode = 0x19
-    listener.register(kVK_ANSI_9, modifiers: [.command, .option]) {
+    let keyNine: CGKeyCode = 0x19
+    listener.register(keyNine, modifiers: [.command, .option]) {
         print("hello from nigiri (Cmd+Option+9 fired)")
     }
     guard listener.start() else {

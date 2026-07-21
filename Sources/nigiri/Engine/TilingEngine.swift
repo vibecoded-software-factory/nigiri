@@ -769,7 +769,11 @@ final class TilingEngine {
                 self.updateRing()
                 return
             }
-            self.reflow()  // clicking/Cmd-Tabbing to a window directly can change focusedIndex outside any of our own hotkeys - keep the strip scrolled to match; reflow() itself keeps the ring in sync every animation step
+            // Clicking or Cmd-Tabbing to a window directly can change
+            // focusedIndex outside any of our own hotkeys - keep the strip
+            // scrolled to match. reflow() keeps the ring in sync itself, on
+            // every animation step.
+            self.reflow()
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
