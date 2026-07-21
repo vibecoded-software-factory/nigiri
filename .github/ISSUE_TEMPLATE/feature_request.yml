@@ -1,0 +1,36 @@
+name: Feature request
+description: Something niri does that nigiri does not
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        nigiri is a port. The strongest request is one that points at what
+        niri does and where it does it, because that is what the
+        implementation will be read from.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What should it do
+      description: Describe the behaviour, not the implementation.
+    validations:
+      required: true
+
+  - type: input
+    id: niri
+    attributes:
+      label: Where niri does this
+      description: >
+        The action name, config option, or file in niri's source. If it is not
+        something niri does, say so plainly - it is still worth discussing, it
+        just changes the bar.
+      placeholder: "`switch-preset-window-height`, or src/layout/scrolling.rs"
+
+  - type: textarea
+    id: macos
+    attributes:
+      label: Anything you know about doing this on macOS
+      description: >
+        An API that would allow it, or a reason it might not be possible.
+        Optional - but it is usually the hard part.
