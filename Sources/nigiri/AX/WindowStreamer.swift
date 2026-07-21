@@ -144,7 +144,7 @@ final class WindowStreamer {
                     self.onFrame?(id, surface, buffer)
                 },
                 onStop: { [weak self] id, message in
-                    print("[stream] \(id) se detuvo: \(message)")
+                    print("[stream] \(id) stopped: \(message)")
                     self?.stop(id)
                     self?.onStopped?(id)
                 })
@@ -154,7 +154,7 @@ final class WindowStreamer {
             do {
                 try stream.addStreamOutput(sink, type: .screen, sampleHandlerQueue: frameQueue)
             } catch {
-                print("[stream] no se pudo enganchar la salida: \(error.localizedDescription)")
+                print("[stream] could not hook up the output: \(error.localizedDescription)")
                 continue
             }
             live[entry.id] = Live(stream: stream, sink: sink)

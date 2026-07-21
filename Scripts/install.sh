@@ -43,7 +43,7 @@ EOF
 if security find-identity -v -p codesigning | grep -q "nigiri codesign"; then
     codesign --force --sign "nigiri codesign" --identifier dev.nigiri "$APP"
 else
-    echo "AVISO: sin certificado 'nigiri codesign' - firma ad-hoc (el permiso morira en cada rebuild)"
+    echo "WARNING: no 'nigiri codesign' certificate - ad-hoc signature (the grant will die on every rebuild)"
     codesign --force --sign - "$APP"
 fi
 
@@ -87,6 +87,6 @@ pkill -f 'nigiri tile' 2>/dev/null || true
 sleep 1
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
-echo "Nigiri.app instalado y arrancado (log: /tmp/nigiri.log)"
-echo "si pide permiso: es UNA fila 'nigiri' en Accessibility - prenderla una vez"
-echo "config en caliente: ~/.config/nigiri/config.kdl - este script solo hace falta tras cambios de codigo"
+echo "Nigiri.app installed and started (log: /tmp/nigiri.log)"
+echo "if it asks for permission: it is ONE 'nigiri' row in Accessibility - tick it once"
+echo "config is live: ~/.config/nigiri/config.kdl - this script is only needed after code changes"

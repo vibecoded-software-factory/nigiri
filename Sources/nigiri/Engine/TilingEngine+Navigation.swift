@@ -55,7 +55,7 @@ extension TilingEngine {
     // this one, wherever it lives.
     func focusWindowPrevious() {
         guard let previous = previouslyFocusedWindow, locate(previous) != nil else {
-            print("focus-window-previous: no hay ventana anterior")
+            print("focus-window-previous: no previous window")
             return
         }
         guard let location = focusInModel(previous, activateWorkspace: false) else { return }
@@ -72,13 +72,13 @@ extension TilingEngine {
     func focusLayer(floating: Bool) {
         if floating {
             guard !workspace.floatingWindows.isEmpty else {
-                print("focus-floating: no hay ventanas flotantes")
+                print("focus-floating: no floating windows")
                 return
             }
             workspace.isFloatingActive = true
         } else {
             guard !workspace.columns.isEmpty else {
-                print("focus-tiling: no hay ventanas tileadas")
+                print("focus-tiling: no tiled windows")
                 return
             }
             workspace.isFloatingActive = false
@@ -96,7 +96,7 @@ extension TilingEngine {
         guard !workspace.isFloatingActive, let column = focusedColumn() else { return }
         let neighbourIndex = workspace.focusedIndex + delta
         guard workspace.columns.indices.contains(neighbourIndex) else {
-            print("swap-window: ya esta en el extremo")
+            print("swap-window: already at the edge")
             return
         }
         let neighbour = workspace.columns[neighbourIndex]
@@ -211,7 +211,7 @@ extension TilingEngine {
     // the toggle, so a bind can be idempotent.
     func moveWindow(toFloating: Bool) {
         guard workspace.isFloatingActive != toFloating else {
-            print("move-window-to-\(toFloating ? "floating" : "tiling"): ya esta ahi")
+            print("move-window-to-\(toFloating ? "floating" : "tiling"): already there")
             return
         }
         toggleWindowFloating()
@@ -274,7 +274,7 @@ extension TilingEngine {
             if best == nil || distance < best!.distance { best = (i, distance) }
         }
         guard let best else {
-            print("focus-floating: no hay ventana en esa direccion")
+            print("focus-floating: no window in that direction")
             return
         }
         workspace.focus(floating: best.index)

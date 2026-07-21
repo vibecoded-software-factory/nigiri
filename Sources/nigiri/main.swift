@@ -43,15 +43,15 @@ if cliArgs.first == "selftest" {
     SelfTest.run()
 }
 
-// `nigiri check-config [ruta]`: parsea y cuenta lo que entendio, sin tocar
-// ventanas ni pedir permisos. Un archivo que el parser rompe en silencio se
-// nota aca (los warnings salen por stdout) en vez de descubrirse porque los
-// binds no responden.
+// `nigiri check-config [path]`: parses and counts what it understood, without
+// touching windows or asking for permissions. A file the parser silently
+// breaks on shows up here (the warnings go to stdout) instead of being
+// discovered because the binds don't respond.
 if cliArgs.first == "check-config" {
     let path = (cliArgs.count > 1 ? cliArgs[1] : "~/.config/nigiri/config.kdl")
         .replacingOccurrences(of: "~", with: NSHomeDirectory())
     guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
-        print("no se puede leer \(path)")
+        print("cannot read \(path)")
         exit(1)
     }
     var visited: Set<String> = []
@@ -61,11 +61,11 @@ if cliArgs.first == "check-config" {
     print("--- \(path)")
     print("mod-key: \(parsed.modKey)")
     print(
-        "binds: \(parsed.binds.count) de teclado, \(parsed.mouseBindings.count) de mouse, \(parsed.wheelBindings.count) de rueda"
+        "binds: \(parsed.binds.count) keyboard, \(parsed.mouseBindings.count) mouse, \(parsed.wheelBindings.count) wheel"
     )
-    print("window-rules: \(parsed.rules.count) | animaciones: \(parsed.animations.count)")
+    print("window-rules: \(parsed.rules.count) | animations: \(parsed.animations.count)")
     print(
-        "gaps: \(parsed.gap) | ancho por defecto: \(parsed.defaultColumnWidth) | focus-ring: \(parsed.ringWidth)"
+        "gaps: \(parsed.gap) | default width: \(parsed.defaultColumnWidth) | focus-ring: \(parsed.ringWidth)"
     )
     print("spawn-at-startup: \(parsed.spawnAtStartup.count) | environment: \(parsed.environment.count)")
     exit(0)

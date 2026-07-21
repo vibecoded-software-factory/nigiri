@@ -183,7 +183,7 @@ final class TrackpadGestures {
         let registrable = devices.prefix(mtCallbacks.count)
         if devices.count > mtCallbacks.count {
             print(
-                "[gestures] \(devices.count - mtCallbacks.count) dispositivo(s) sin registrar: solo hay \(mtCallbacks.count) ranuras"
+                "[gestures] \(devices.count - mtCallbacks.count) device(s) not registered: there are only \(mtCallbacks.count) slots"
             )
         }
         for (slot, dev) in registrable.enumerated() {
@@ -196,7 +196,7 @@ final class TrackpadGestures {
             registerFn?(dev, mtCallbacks[slot])
             startFn?(dev, 0)
         }
-        print("[gestures] \(described.count) dispositivo(s) multitouch: \(described.joined(separator: ", "))")
+        print("[gestures] \(described.count) multitouch device(s): \(described.joined(separator: ", "))")
     }
 
     // Called on the MT thread. Tracks the centroid of the touches while
@@ -241,8 +241,8 @@ final class TrackpadGestures {
 // device id whose numbering does not match what MTDeviceGetDeviceID
 // reports - the map keyed on it missed every time, so the Magic Mouse fell
 // through to the trackpad branch and three fingers on the mouse drove the
-// three-finger trackpad bindings (reported live: "el overview me anda con
-// 3 dedos en el mouse"). A @convention(c) function can't capture, so the
+// three-finger trackpad bindings (reported live: "the overview works for me
+// with 3 fingers on the mouse"). A @convention(c) function can't capture, so the
 // slot is baked into one trampoline per device instead of being looked up.
 private func mtCallback0(_ d: Int32, _ t: UnsafeRawPointer?, _ c: Int32, _ ts: Double, _ f: Int32) -> Int32 {
     TrackpadGestures.shared?.handleFrame(slot: 0, t, c); return 0

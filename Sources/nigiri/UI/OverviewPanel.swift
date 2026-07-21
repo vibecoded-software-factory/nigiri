@@ -491,17 +491,17 @@ final class OverviewPanel {
             }
         }
         prepareEntrance()
-        // 0.99, y no es cosmetico: un panel del todo opaco tapando la
-        // pantalla hace que macOS marque como OCLUIDAS a todas las ventanas
-        // que hay debajo, y una app ocluida deja de dibujar. Los streams
-        // seguian entregando 30 frames por segundo - del MISMO contenido
-        // viejo, porque nadie estaba pintando nada nuevo. Medido: con el
-        // panel opaco el checksum de los pixeles entregados se congelaba a
-        // los pocos segundos y no volvia a moverse; al 99% cambia en cada
-        // muestra. Un 1% de transparencia sobre un fondo oscuro no se ve, y
-        // es lo unico que tenemos para decirle al sistema que las ventanas de
-        // atras siguen a la vista - la oclusion la decide WindowServer y solo
-        // mira si algo opaco las cubre.
+        // 0.99, and it isn't cosmetic: a fully opaque panel covering the
+        // screen makes macOS mark every window underneath as OCCLUDED, and an
+        // occluded app stops drawing. The streams kept delivering 30 frames
+        // per second - of the SAME stale content, because nobody was painting
+        // anything new. Measured: with the panel opaque, the checksum of the
+        // delivered pixels froze after a few seconds and never moved again; at
+        // 99% it changes on every sample. 1% of transparency over a dark
+        // backdrop is invisible, and it's the only thing we have to tell the
+        // system that the windows behind are still in view - occlusion is
+        // WindowServer's call and it only looks at whether something opaque
+        // covers them.
         window.alphaValue = 0.99
         window.orderFrontRegardless()
         if opening { playOpen(animation) }

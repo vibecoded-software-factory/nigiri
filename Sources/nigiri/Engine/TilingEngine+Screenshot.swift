@@ -36,7 +36,7 @@ extension TilingEngine {
             guard let window = focusedManagedWindow(),
                 let frame = WindowMover.currentFrame(window.axElement)
             else {
-                print("screenshot-window: no hay ventana enfocada")
+                print("screenshot-window: no focused window")
                 return
             }
             // -R takes AppKit's bottom-left screen space.
@@ -47,7 +47,7 @@ extension TilingEngine {
         guard let path = expandedScreenshotPath() else {
             // No path configured: clipboard only, like niri.
             runScreencapture(args + ["-c"])
-            print("screenshot -> portapapeles")
+            print("screenshot -> clipboard")
             return
         }
         try? FileManager.default.createDirectory(
@@ -62,6 +62,6 @@ extension TilingEngine {
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         process.arguments = args
         process.environment = Self.spawnEnvironment()
-        do { try process.run() } catch { print("screenshot: no se pudo ejecutar screencapture") }
+        do { try process.run() } catch { print("screenshot: could not run screencapture") }
     }
 }

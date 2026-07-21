@@ -39,7 +39,7 @@ extension TilingEngine {
     // windows flavor below still works.
     func enterOverviewPanel() {
         guard !occupiedWorkspaceRows().isEmpty else {
-            print("overview: no hay ninguna ventana que mostrar")
+            print("overview: no window at all to show")
             return
         }
         isOverviewActive = true
@@ -239,7 +239,7 @@ extension TilingEngine {
                 }
             }
             let cost = Date().timeIntervalSince(started)
-            debugLog("[capture] \(buffers.count) ventana(s) en \(Int(cost * 1000))ms")
+            debugLog("[capture] \(buffers.count) window(s) in \(Int(cost * 1000))ms")
             // Wait as long as the batch took: half the time capturing, half
             // idle, on a background queue. Off the main thread this is a
             // throughput knob rather than a stutter knob - it was cost * 2
@@ -275,7 +275,7 @@ extension TilingEngine {
         streamedWindows.formIntersection(ids)
         streamer.keepOnly(ids)
         streamer.start(starting)
-        debugLog("[stream] \(starting.count) ventana(s) en vivo")
+        debugLog("[stream] \(starting.count) window(s) live")
     }
 
     // Every card starts with something recognisable, before any pixels of
@@ -351,7 +351,7 @@ extension TilingEngine {
     func enterOverview() {
         guard !isOverviewActive else { return }
         guard !isTransitioningWorkspace else {
-            print("overview: ignorado, hay un cambio de workspace en curso")
+            print("overview: ignored, a workspace switch is in progress")
             return
         }
         // The panel works either way now: with the Screen Recording grant it
@@ -363,7 +363,7 @@ extension TilingEngine {
         if #available(macOS 14.0, *) {
             if !WindowCapture.hasPermission(), WindowCapture.requestPermissionOnce() {
                 print(
-                    "overview: Screen Recording pedido (una sola vez) - mientras tanto, iconos y documentos")
+                    "overview: Screen Recording requested (once only) - icons and documents in the meantime")
             }
             enterOverviewPanel()
             return
@@ -447,7 +447,7 @@ extension TilingEngine {
         }
         overviewKeys.unregisterAll()
         print(
-            "overview: Escape/Enter no se pudieron reservar - modo observador (la tecla tambien llega a la app)"
+            "overview: could not reserve Escape/Enter - observer mode (the key also reaches the app)"
         )
         overviewKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { event in
             switch event.keyCode {
