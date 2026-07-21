@@ -1,0 +1,70 @@
+name: Bug report
+description: Something behaves differently than it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A window manager bug is only fixable if it can be reproduced, and the
+        details below are the ones that decide whether it can. The log matters
+        most: nigiri records every window it adopts and every frame it is
+        refused.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        1. Two columns open, focus on the left one
+        2. Pressed Mod+Shift+L
+        3. Expected the window to move right; it swapped columns instead
+    validations:
+      required: true
+
+  - type: input
+    id: apps
+    attributes:
+      label: Which applications
+      description: >
+        Name them exactly. Apps differ wildly in what they let the
+        Accessibility API do, and a bug that only happens in one of them is a
+        different bug.
+      placeholder: Chrome 141, Alacritty 0.15, Slack
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.1 (25B78)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >
+        From `/tmp/nigiri.log`, the lines around the moment it happened. If you
+        can reproduce it, reinstall with `NIGIRI_DEBUG=1` set for far more
+        detail. Redact any window title you would rather not publish.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant part of your config
+      description: The section involved, not the whole file.
+      render: kdl
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: "`nigiri selftest` is green on my build"
+        - label: I checked this is not listed as a known divergence in `CLAUDE.md`
