@@ -11,7 +11,9 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macos-15 ships Swift 6.1 and Package.swift declares 6.2, which is what
+    # the machine this is developed on runs.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
