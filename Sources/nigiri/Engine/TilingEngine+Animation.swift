@@ -302,14 +302,23 @@ extension TilingEngine {
         // window per tick, twice over, since coveringFloatingFrames read the
         // floating ones a second time. With one hung app those blocking
         // reads froze the animation itself.
+        //
+        // The stack is read once here too, and for the same reason: it costs
+        // a WindowServer round-trip (0.63ms average, 5.3ms worst) and cannot
+        // change under an animation nobody is clicking through. Both halves
+        // share the one snapshot so a window is never matched twice.
+        let stacking = trackRing ? WindowStacking.onScreen() : []
         let staticDecorations =
             trackRing
-            ? decorationCandidates(excluding: anims.map { $0.window } + (focusedWindow.map { [$0] } ?? []))
+            ? decorationCandidates(
+                excluding: anims.map { $0.window } + (focusedWindow.map { [$0] } ?? []),
+                stacking: stacking)
             : []
-        let animatedFloating = Set(
-            anims.indices.filter { i in
-                workspace.floatingWindows.contains { $0 === anims[i].window }
-            })
+        let animatedDepths =
+            trackRing
+            ? WindowStacking.depths(
+                of: anims.map { (pid: $0.window.pid, frame: $0.lastWritten) }, in: stacking)
+            : [Int?](repeating: nil, count: anims.count)
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + tickInterval, repeating: tickInterval)
         timer.setEventHandler {
@@ -423,12 +432,17 @@ extension TilingEngine {
                         candidates.append(
                             TilingEngine.DecorationCandidate(
                                 frame: anims[i].lastWritten, minimized: false,
-                                isFloating: animatedFloating.contains(i)))
+                                depth: animatedDepths[i]))
                     }
                     // Same rule as the settle pass, and now literally the same
-                    // function: minimized windows excluded, and a floating window
-                    // is never counted as covering itself.
-                    self.borders.update(frames: TilingEngine.decoratedFrames(candidates, screen: screen))
+                    // function: minimized windows excluded, and a window whose
+                    // border is hidden behind something in front of it drops it.
+                    // The occluder frames are the snapshot's: a window that is
+                    // itself moving carries a slightly stale frame here, and
+                    // the settle pass re-reads the stack anyway.
+                    self.borders.update(
+                        frames: TilingEngine.decoratedFrames(
+                            candidates, occluders: stacking, screen: screen))
                 }
                 if !stillMoving {
                     timer.cancel()

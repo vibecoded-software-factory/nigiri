@@ -4,3 +4,7 @@
 *.xcodeproj
 DerivedData/
 .DS_Store
+
+# Coverage artefacts from the instrumented selftest run
+*.profraw
+*.profdata

@@ -450,11 +450,13 @@ final class TilingEngine {
         floating.contains { $0.intersects(frame.insetBy(dx: -focusRingWidth, dy: -focusRingWidth)) }
     }
 
-    // One window as the decoration pass sees it.
+    // One window as the decoration pass sees it. `depth` is its place in the
+    // real WindowServer stack, 0 being frontmost, nil when it could not be
+    // matched (see WindowStacking.depths).
     struct DecorationCandidate {
         let frame: CGRect
         let minimized: Bool
-        let isFloating: Bool
+        let depth: Int?
     }
 
     // Which candidates get a border. Pure, and the SINGLE rule: the animator
@@ -463,38 +465,70 @@ final class TilingEngine {
     // survived the settle. And a floating window was tested against a list
     // that INCLUDED itself, so every unfocused dialog covered itself and
     // never got one at all.
-    static func decoratedFrames(_ candidates: [DecorationCandidate], screen: CGRect) -> [CGRect] {
-        let floating = candidates.enumerated().filter { $0.element.isFloating }
-        return candidates.enumerated().compactMap { index, candidate in
+    //
+    // Coverage is decided by the REAL stack, not by which windows float. The
+    // old rule dropped a border when any floating window overlapped it, on
+    // the assumption that floating means in front - true in niri, false on
+    // macOS, where activating an app raises all of its windows. It therefore
+    // missed the mirror case entirely: a floating window sitting BEHIND a
+    // tiled one still got its border painted across it, outlining a window
+    // nobody could see (Calculator behind Font Book, reported live).
+    // The occluders are the WHOLE on-screen stack, not the candidate list.
+    // Testing candidates against each other was the first attempt and it
+    // failed on the exact case it was written for: the FOCUSED window is
+    // excluded from the candidates (it wears the ring instead of a border),
+    // so Calculator floating behind a focused Font Book was compared against
+    // a set that did not contain the window covering it, and kept its border.
+    // Asking the stack instead also covers windows nigiri does not manage at
+    // all - another app's dialog over a tiled window hides its border too.
+    static func decoratedFrames(
+        _ candidates: [DecorationCandidate], occluders: [WindowStacking.Entry], screen: CGRect
+    ) -> [CGRect] {
+        candidates.compactMap { candidate in
             guard !candidate.minimized, decorationIsVisible(candidate.frame, on: screen) else { return nil }
+            // An unmatched window keeps its border: drawing one that should
+            // not be there is cosmetic, while dropping one for a window the
+            // user is looking at reads as nigiri having lost the window.
+            guard let depth = candidate.depth, depth <= occluders.count else { return candidate.frame }
             let band = candidate.frame.insetBy(dx: -focusRingWidth, dy: -focusRingWidth)
-            let covered = floating.contains { $0.offset != index && $0.element.frame.intersects(band) }
+            // prefix(depth) is everything strictly in front of it, so the
+            // candidate is never tested against itself.
+            let covered = occluders.prefix(depth).contains { $0.frame.intersects(band) }
             return covered ? nil : candidate.frame
         }
     }
 
     // The candidates of the active workspace, read from AX. The expensive
-    // half (two AX round-trips per window), kept apart so the animator can
-    // pay it ONCE for the windows that are not moving instead of once per
-    // 8.3ms tick.
-    func decorationCandidates(excluding excluded: [ManagedWindow]) -> [DecorationCandidate] {
-        workspace.allWindows.compactMap { w in
-            guard !excluded.contains(where: { $0 === w }), let frame = WindowMover.currentFrame(w.axElement)
-            else { return nil }
-            let minimized: Bool? = AX.attribute(w.axElement, kAXMinimizedAttribute as String)
-            return DecorationCandidate(
-                frame: frame, minimized: minimized == true,
-                isFloating: workspace.floatingWindows.contains { $0 === w })
+    // half (two AX round-trips per window, plus one WindowServer read for the
+    // stack), kept apart so the animator can pay it ONCE for the windows that
+    // are not moving instead of once per 8.3ms tick.
+    func decorationCandidates(
+        excluding excluded: [ManagedWindow], stacking: [WindowStacking.Entry]? = nil
+    ) -> [DecorationCandidate] {
+        let live: [(window: ManagedWindow, frame: CGRect, minimized: Bool)] =
+            workspace.allWindows.compactMap { w in
+                guard !excluded.contains(where: { $0 === w }),
+                    let frame = WindowMover.currentFrame(w.axElement)
+                else { return nil }
+                let minimized: Bool? = AX.attribute(w.axElement, kAXMinimizedAttribute as String)
+                return (w, frame, minimized == true)
+            }
+        let depths = WindowStacking.depths(
+            of: live.map { (pid: $0.window.pid, frame: $0.frame) },
+            in: stacking ?? WindowStacking.onScreen())
+        return live.enumerated().map { index, entry in
+            DecorationCandidate(frame: entry.frame, minimized: entry.minimized, depth: depths[index])
         }
     }
 
     func updateInactiveDecorations() {
         let focused = focusedManagedWindow()
         let screenFrame = usableScreen().frame
+        let stacking = WindowStacking.onScreen()
         borders.update(
             frames: Self.decoratedFrames(
-                decorationCandidates(excluding: focused.map { [$0] } ?? []),
-                screen: screenFrame))
+                decorationCandidates(excluding: focused.map { [$0] } ?? [], stacking: stacking),
+                occluders: stacking, screen: screenFrame))
     }
 
     // Tab indicators for every visible tabbed column, refreshed with the
@@ -787,7 +821,7 @@ final class TilingEngine {
         // before: the layout stayed wrong until an unrelated AX event.
         let onScreenChange = MainActorCallback {
             ColumnLayoutEngine.newEpoch()
-            print("[layout] cambio de pantalla: se re-mide todo")
+            print("[layout] screen change: re-measuring everything")
             self.relayout()
         }
         NotificationCenter.default.addObserver(
@@ -810,7 +844,7 @@ final class TilingEngine {
         // file coming back. Same policy the config watcher already applies.
         let reloadForLayout = MainActorCallback {
             guard let config = NigiriConfig.load() else {
-                print("[config] no se pudo leer al cambiar el layout de teclado - se mantiene la anterior")
+                print("[config] unreadable on keyboard layout change - keeping the previous one")
                 // Re-apply what is already in force: the only thing this path
                 // actually needs is the keycodes resolved against the new layout.
                 if let current = self.lastAppliedConfig { self.applyConfig(current, initial: false) }
@@ -996,7 +1030,7 @@ final class TilingEngine {
             guard let action = self.wheelActions[key], !action.isEmpty else {
                 // Logged like the button path: a wheel bind that never fires is
                 // otherwise indistinguishable from a wheel that reports nothing.
-                debugLog("[mouse] rueda \(key) sin bind")
+                debugLog("[mouse] wheel \(key) has no bind")
                 return
             }
             self.performAction(action)
@@ -1009,7 +1043,7 @@ final class TilingEngine {
                 // Logged unbound too: a mouse whose side buttons report a
                 // different number than expected is otherwise indistinguishable
                 // from a bind that never fired.
-                debugLog("[mouse] \(key) sin bind")
+                debugLog("[mouse] \(key) has no bind")
                 return false
             }
             print("[mouse] \(key) -> \(action)")
