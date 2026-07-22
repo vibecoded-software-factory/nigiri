@@ -26,7 +26,42 @@ struct ScreenStrut: Equatable {
     var ownerPid: pid_t? = nil
 }
 
+// Per-edge insets, in points. Plain data so the strut math stays pure and
+// selftestable away from NSScreen.
+struct EdgeInsets: Equatable {
+    var top: CGFloat = 0
+    var bottom: CGFloat = 0
+    var left: CGFloat = 0
+    var right: CGFloat = 0
+}
+
 enum ScreenStruts {
+    // Combine the system's own insets (menu-bar/notch strip, Dock) with the
+    // IPC-reserved struts: per edge, the LARGER of the two wins - not the sum.
+    // A reservation is measured from the PHYSICAL screen edge, like a
+    // layer-shell exclusive zone, and the panel that reserved it typically
+    // covers the system strip itself (window levels above normal may occupy
+    // it). Summing would double-count and open a dead gap between the panel
+    // and the first window. With no reservation on an edge the system inset
+    // still wins, so windows never land under the strip the WindowServer
+    // refuses them. Struts on the same edge stack with each other first.
+    static func effectiveInsets(system: EdgeInsets, reserved: [ScreenStrut]) -> EdgeInsets {
+        var sum = EdgeInsets()
+        for strut in reserved where strut.size > 0 {
+            switch strut.edge {
+            case .top: sum.top += strut.size
+            case .bottom: sum.bottom += strut.size
+            case .left: sum.left += strut.size
+            case .right: sum.right += strut.size
+            }
+        }
+        return EdgeInsets(
+            top: max(system.top, sum.top),
+            bottom: max(system.bottom, sum.bottom),
+            left: max(system.left, sum.left),
+            right: max(system.right, sum.right))
+    }
+
     // Inset a frame (AX space: top-left origin, y grows downward) by every
     // strut. Struts on the same edge stack. Clamped so an over-large strut
     // reserves the whole screen rather than producing a negative rect.

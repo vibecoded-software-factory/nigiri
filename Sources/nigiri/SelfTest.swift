@@ -1650,6 +1650,30 @@ enum SelfTest {
         expect(ScreenStrut.Edge(rawValue: "top") == .top, "edge parses from the IPC token")
         expect(ScreenStrut.Edge(rawValue: "nonsense") == nil, "a bad edge token is rejected")
 
+        // System-inset vs reservation combination (effectiveInsets): per edge
+        // the larger wins, never the sum - a reservation is measured from the
+        // physical screen edge and the reserving panel covers the system strip
+        // itself, so stacking would double-count (the 32pt dead gap between a
+        // top bar and the first window).
+        let sys = EdgeInsets(top: 32, bottom: 0, left: 0, right: 0)
+        let barWins = ScreenStruts.effectiveInsets(
+            system: sys, reserved: [ScreenStrut(edge: .top, size: 44)])
+        expectEqual(barWins.top, 44, "a reservation larger than the system strip subsumes it")
+        let systemWins = ScreenStruts.effectiveInsets(
+            system: sys, reserved: [ScreenStrut(edge: .top, size: 20)])
+        expectEqual(systemWins.top, 32, "a smaller reservation never lets windows under the strip")
+        let unreserved = ScreenStruts.effectiveInsets(system: sys, reserved: [])
+        expectEqual(unreserved.top, 32, "no reservation keeps the system inset as-is")
+        let stackedThenMax = ScreenStruts.effectiveInsets(
+            system: sys,
+            reserved: [ScreenStrut(edge: .top, size: 20), ScreenStrut(edge: .top, size: 20)])
+        expectEqual(stackedThenMax.top, 40, "same-edge reservations stack before the max")
+        let otherEdge = ScreenStruts.effectiveInsets(
+            system: EdgeInsets(top: 32, bottom: 70, left: 0, right: 0),
+            reserved: [ScreenStrut(edge: .bottom, size: 30)])
+        expectEqual(otherEdge.bottom, 70, "a Dock-sized system inset survives a smaller reservation")
+        expectEqual(otherEdge.top, 32, "edges combine independently")
+
         // Owner-pid GC (dropStruts' rule): a reservation tagged with a client
         // pid is dropped when that process dies, so a crashed or killed panel
         // cannot leave the layout shrunk forever; unowned and other-owner zones
