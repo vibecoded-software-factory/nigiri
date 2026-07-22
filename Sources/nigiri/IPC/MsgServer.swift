@@ -91,7 +91,10 @@ final class MsgServer {
                 guard let newline = buffer.firstIndex(of: 0x0A) else { return }
                 let request = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
                     .trimmingCharacters(in: .whitespaces)
-                if request == "event-stream" {
+                // Both the legacy text form (`event-stream`) and niri's real IPC
+                // form (the JSON string `"EventStream"`) open a persistent event
+                // stream; anything else is a one-shot request.
+                if request == "event-stream" || request == "\"EventStream\"" {
                     self.streamFDs.insert(connection)
                     self.send(connection, "{\"event\":\"subscribed\"}")
                     // Replay the current state to this one subscriber before it
