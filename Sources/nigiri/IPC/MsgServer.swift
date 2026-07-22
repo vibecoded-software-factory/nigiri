@@ -52,6 +52,16 @@ final class MsgServer {
             close(fd)
             return
         }
+        // Advertise the socket the way niri does: export $NIRI_SOCKET so a stock
+        // niri IPC client (a status bar) finds it with no extra setup. setenv
+        // covers our own children; launchctl setenv makes every GUI app in the
+        // login session inherit it too - the macOS equivalent of niri putting
+        // the variable in the session environment.
+        setenv("NIRI_SOCKET", Self.socketPath, 1)
+        let advertise = Process()
+        advertise.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        advertise.arguments = ["setenv", "NIRI_SOCKET", Self.socketPath]
+        try? advertise.run()
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
         source.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
