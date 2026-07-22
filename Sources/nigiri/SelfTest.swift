@@ -1571,6 +1571,40 @@ enum SelfTest {
         expectEqual(gcfg.gestureMouseOne[.up] ?? "", "open-overview", "one-finger mouse swipe")
         expect(gcfg.gestureMouseTwo[.right] == nil, "and what was not bound stays unbound")
 
+        // Reserved screen-edge zones (the IPC reserve-zone command): the tiling
+        // area shrinks by the strut, on the correct edge, in AX space (top-left
+        // origin). This is the whole mechanism macOS lacks a compositor for.
+        let strutScreen = CGRect(x: 100, y: 50, width: 1000, height: 800)
+        let topStrut = ScreenStruts.inset(strutScreen, by: [ScreenStrut(edge: .top, size: 44)])
+        expectEqual(
+            topStrut, CGRect(x: 100, y: 94, width: 1000, height: 756),
+            "a top strut moves the origin down and shrinks height")
+        let bottomStrut = ScreenStruts.inset(strutScreen, by: [ScreenStrut(edge: .bottom, size: 30)])
+        expectEqual(
+            bottomStrut, CGRect(x: 100, y: 50, width: 1000, height: 770),
+            "a bottom strut shrinks height without moving the origin")
+        let leftStrut = ScreenStruts.inset(strutScreen, by: [ScreenStrut(edge: .left, size: 60)])
+        expectEqual(
+            leftStrut, CGRect(x: 160, y: 50, width: 940, height: 800),
+            "a left strut moves the origin right and shrinks width")
+        let stacked = ScreenStruts.inset(
+            strutScreen,
+            by: [
+                ScreenStrut(edge: .top, size: 44), ScreenStrut(edge: .top, size: 20),
+                ScreenStrut(edge: .right, size: 10),
+            ])
+        expectEqual(
+            stacked, CGRect(x: 100, y: 114, width: 990, height: 736),
+            "struts on the same edge stack; different edges combine")
+        let noStrut = ScreenStruts.inset(strutScreen, by: [])
+        expectEqual(noStrut, strutScreen, "no struts leaves the frame untouched")
+        let overSized = ScreenStruts.inset(strutScreen, by: [ScreenStrut(edge: .top, size: 9999)])
+        expectEqual(overSized.height, 0, "an over-large strut clamps to zero, never negative")
+        let ignoredZero = ScreenStruts.inset(strutScreen, by: [ScreenStrut(edge: .top, size: 0)])
+        expectEqual(ignoredZero, strutScreen, "a zero strut reserves nothing")
+        expect(ScreenStrut.Edge(rawValue: "top") == .top, "edge parses from the IPC token")
+        expect(ScreenStrut.Edge(rawValue: "nonsense") == nil, "a bad edge token is rejected")
+
         if failures.isEmpty {
             print("selftest: \(checks) checks, all OK")
             exit(0)

@@ -430,9 +430,31 @@ final class TilingEngine {
 
     // Screen frame + the usable strip width every layout computation derives
     // from it - previously recomputed as a two-line ritual at seven sites.
+    // Screen-edge zones reserved over the IPC socket, keyed by the id the
+    // requester passed so each can set and clear its own. Subtracted from the
+    // usable area below - the single chokepoint every layout pass reads, so
+    // honoring a reservation is just this one inset. See ScreenStruts.
+    var reservedStruts: [String: ScreenStrut] = [:]
+
     func usableScreen() -> (frame: CGRect, usableWidth: CGFloat) {
-        let frame = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        let full = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        let frame = ScreenStruts.inset(full, by: Array(reservedStruts.values))
         return (frame, frame.width - 2 * ColumnLayoutEngine.gap)
+    }
+
+    // A strut changes the usable HEIGHT, and the per-column height cache holds
+    // absolute pixel heights that sum to the old usable height - so it must be
+    // dropped or the layout reuses stale heights and only the window ORIGIN
+    // moves, leaving windows the same height and hanging off the reserved edge
+    // (measured: a top strut moved y but left h, so the window overran the
+    // bottom). Membership changes already drop this cache; a usable-area change
+    // is the other case that has to. Then relayout recomputes against the new
+    // area, on every workspace so a switch doesn't reveal a stale one.
+    func applyStrutChange() {
+        for ws in workspaces {
+            for column in ws.columns { column.cachedHeights = nil }
+        }
+        relayout()
     }
 
     // Frames of the windows floating ABOVE the tiled layer (dialogs,
