@@ -76,6 +76,22 @@ final class ManagedWindow {
         else { return nil }
         return (requested, actual)
     }
+    // A refusal SIGHTING that has not been confirmed yet. A busy app applies a
+    // frame write asynchronously, so the immediate read-back can return the
+    // OLD frame - memoizing that as "the app's answer" latched a permanent
+    // lie: every later pass saw the target as already-refused and never wrote
+    // again (the layout stayed visibly wrong until a restart). A real refusal
+    // (a min-size, a position clamp) gives the SAME answer on the very next
+    // pass; a stale read-back does not. So the first divergent answer only
+    // lands here, and the memo above is written when the sighting repeats.
+    var refusalCandidate: (requested: CGRect, actual: CGRect)? = nil {
+        didSet { candidateEpoch = ColumnLayoutEngine.epoch }
+    }
+    private(set) var candidateEpoch = 0
+    var confirmedRefusalCandidate: (requested: CGRect, actual: CGRect)? {
+        guard candidateEpoch == ColumnLayoutEngine.epoch else { return nil }
+        return refusalCandidate
+    }
     // True for windows adopted as dialogs (no close button, or fixed-size -
     // see CollectedKind). They live in the floating layer and can never be
     // moved INTO the tiled columns: tiling one means fighting a window that

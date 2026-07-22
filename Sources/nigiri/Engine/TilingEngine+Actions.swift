@@ -581,6 +581,7 @@ extension TilingEngine {
             }
             current.lastRequestedFrame = nil
             current.lastActualFrame = nil
+            current.refusalCandidate = nil
             // Floating windows were shoved out of view and are not part of
             // the tiling pass: put them back where they were.
             for w in workspace.floatingWindows {

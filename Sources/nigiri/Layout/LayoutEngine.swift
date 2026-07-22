@@ -727,13 +727,55 @@ enum ColumnLayoutEngine {
         // its stale size until something bumped the epoch. Same reasoning as
         // the refusal counter in item 37: a timeout is not an answer.
         if wrote {
-            w.lastRequestedFrame = target
-            w.lastActualFrame = actual
+            switch Self.refusalVerdict(
+                target: target, actual: actual, candidate: w.confirmedRefusalCandidate)
+            {
+            case .agreed:
+                w.lastRequestedFrame = target
+                w.lastActualFrame = actual
+                w.refusalCandidate = nil
+            case .confirmedRefusal:
+                // The same divergent answer, two passes in a row: a real
+                // min-size/clamp refusal. Latch it so we stop re-fighting.
+                w.lastRequestedFrame = target
+                w.lastActualFrame = actual
+                w.refusalCandidate = nil
+            case .unconfirmed:
+                // First divergent answer. It may be a real refusal - or a busy
+                // app's STALE read-back (the write landed, the frame just
+                // hadn't updated when we read). Memoizing a stale read as
+                // "the app's answer" latched permanently-wrong layouts, so
+                // record only a candidate and let the next pass decide.
+                w.refusalCandidate = (target, actual)
+                w.lastRequestedFrame = nil
+                w.lastActualFrame = nil
+            }
         } else {
             w.lastRequestedFrame = nil
             w.lastActualFrame = nil
+            w.refusalCandidate = nil
         }
         return actual
+    }
+
+    enum RefusalVerdict {
+        case agreed
+        case confirmedRefusal
+        case unconfirmed
+    }
+
+    // Pure decision for the memoization above, selftestable: the answer
+    // matches the request (agreed), matches a previous sighting of the same
+    // divergent answer (confirmedRefusal), or diverges for the first time
+    // (unconfirmed - retry before latching).
+    static func refusalVerdict(
+        target: CGRect, actual: CGRect, candidate: (requested: CGRect, actual: CGRect)?
+    ) -> RefusalVerdict {
+        if isClose(actual, target) { return .agreed }
+        if let candidate, isClose(candidate.requested, target), isClose(candidate.actual, actual) {
+            return .confirmedRefusal
+        }
+        return .unconfirmed
     }
 
     static func isClose(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 1.0) -> Bool {
