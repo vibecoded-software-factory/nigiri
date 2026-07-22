@@ -75,6 +75,8 @@ extension TilingEngine {
         case "focus-window-down-or-top": focusWindowWrapping(delta: 1)
         case "focus-window-up-or-bottom": focusWindowWrapping(delta: -1)
         case "focus-window-previous": focusWindowPrevious()
+        case "focus-window-by-id":
+            if parts.count > 1, let id = UInt64(parts[1]) { focusWindowByID(id) }
         case "focus-floating": focusLayer(floating: true)
         case "focus-tiling": focusLayer(floating: false)
         case "swap-window-left": swapWindow(delta: -1)
