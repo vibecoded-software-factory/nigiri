@@ -139,7 +139,15 @@ extension TilingEngine {
         while workspaces.count <= requested { workspaces.append(Workspace()) }
         let targetIndex = requested
         guard targetIndex != activeWorkspaceIndex else { return }
+        // Two frames, and the difference matters once a strut is reserved: the
+        // RAW visible frame is where windows park off-screen (below its bottom,
+        // past its right edge), while the USABLE frame is where the layout puts
+        // them - shrunk by any reserved zone. Using the raw frame for the
+        // layout too left an entered workspace ignoring the strut (window at
+        // the raw top, inside the reserved band), even though the same-screen
+        // relayout honored it. Park with raw, lay out with usable.
         let screenFrame = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        let usableFrame = usableScreen().frame
         let leaving = workspace
         previousWorkspaceIndex = activeWorkspaceIndex
         activeWorkspaceIndex = targetIndex
@@ -171,7 +179,7 @@ extension TilingEngine {
             targets.append((w, strip))
         }
         var enteringTargets = ColumnLayoutEngine.targetFrames(
-            columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex,
+            columns: workspace.columns, in: usableFrame, maximizedIndex: workspace.maximizedIndex,
             viewOffset: workspace.viewOffset)
         var enteringFloating: [ManagedWindow] = []
         for w in workspace.floatingWindows {
@@ -250,7 +258,7 @@ extension TilingEngine {
                     // The floating windows made it home; only now is their
                     // return address safe to drop.
                     for w in clearStashOnArrival { w.stashedFrame = nil }
-                    discovered = self.applyLayout(screenFrame: screenFrame)
+                    discovered = self.applyLayout(screenFrame: usableFrame)
                     // Re-assert the model's focus: macOS may have handed real
                     // focus elsewhere during the switch - syncing FROM that
                     // transient state (instead of re-imposing ours) is what

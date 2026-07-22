@@ -151,6 +151,23 @@ extension TilingEngine {
             moveColumnToWorkspace(activeWorkspaceIndex + 2, focus: !parts.contains("focus=false"))
         case "move-workspace-up": moveWorkspace(delta: -1)
         case "move-workspace-down": moveWorkspace(delta: 1)
+        // Screen-edge reservation, the compositor side of niri's layer-shell
+        // exclusive zone: `reserve-zone <id> <edge> <size>` shrinks the tiling
+        // area, `clear-zone <id>` gives it back. Any client of this socket can
+        // ask; nigiri does not care which. A zero or malformed size clears, so
+        // a client dropping its reservation to 0 leaves no phantom strut.
+        case "reserve-zone":
+            if parts.count >= 4, let edge = ScreenStrut.Edge(rawValue: String(parts[2])),
+                let size = Double(parts[3]), size > 0
+            {
+                reservedStruts[String(parts[1])] = ScreenStrut(edge: edge, size: CGFloat(size))
+            } else if parts.count >= 2 {
+                reservedStruts.removeValue(forKey: String(parts[1]))
+            }
+            applyStrutChange()
+        case "clear-zone":
+            if parts.count >= 2 { reservedStruts.removeValue(forKey: String(parts[1])) }
+            applyStrutChange()
         case "consume-or-expel-window-left", "consume-or-expel-left": consumeOrExpel(delta: -1)
         case "consume-or-expel-window-right", "consume-or-expel-right": consumeOrExpel(delta: 1)
         case "consume-window-into-column": consumeWindowIntoColumn()
