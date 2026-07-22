@@ -442,6 +442,19 @@ final class TilingEngine {
         return (frame, frame.width - 2 * ColumnLayoutEngine.gap)
     }
 
+    // Drop every zone a now-dead process reserved. Returns whether anything
+    // was removed, so the caller only pays a relayout when it must. This is
+    // what keeps a crashed or killed panel from leaving the layout shrunk
+    // forever - the compositor releases the reservation when the client dies,
+    // the same as a Wayland compositor dropping a layer surface's exclusive
+    // zone on disconnect.
+    @discardableResult
+    func dropStruts(ownerPid pid: pid_t) -> Bool {
+        let before = reservedStruts.count
+        reservedStruts = reservedStruts.filter { $0.value.ownerPid != pid }
+        return reservedStruts.count != before
+    }
+
     // A strut changes the usable HEIGHT, and the per-column height cache holds
     // absolute pixel heights that sum to the old usable height - so it must be
     // dropped or the layout reuses stale heights and only the window ORIGIN
@@ -925,7 +938,14 @@ final class TilingEngine {
             let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
                 .processIdentifier
             MainActor.assumeIsolated {
-                if let pid { self.watcher.unwatch(pid: pid) }
+                if let pid {
+                    self.watcher.unwatch(pid: pid)
+                    // Release any screen-edge zone this app had reserved: it is
+                    // gone and can no longer clear its own (a killed or crashed
+                    // panel). applyStrutChange re-tiles against the freed area;
+                    // requestRelayout below is the general case for its windows.
+                    if self.dropStruts(ownerPid: pid) { self.applyStrutChange() }
+                }
                 requestRelayout.run()
             }
         }

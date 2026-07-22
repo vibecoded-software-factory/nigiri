@@ -18,6 +18,12 @@ struct ScreenStrut: Equatable {
     enum Edge: String { case top, bottom, left, right }
     let edge: Edge
     let size: CGFloat
+    // The requesting client's pid, when it sent one. A reservation is dropped
+    // the moment that process dies (didTerminateApplicationNotification), so a
+    // panel that crashes or is killed without clearing its own zone cannot
+    // leave the layout permanently shrunk. nil = no owner given, kept until an
+    // explicit clear-zone.
+    var ownerPid: pid_t? = nil
 }
 
 enum ScreenStruts {

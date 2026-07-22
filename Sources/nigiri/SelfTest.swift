@@ -1612,6 +1612,21 @@ enum SelfTest {
         expect(ScreenStrut.Edge(rawValue: "top") == .top, "edge parses from the IPC token")
         expect(ScreenStrut.Edge(rawValue: "nonsense") == nil, "a bad edge token is rejected")
 
+        // Owner-pid GC (dropStruts' rule): a reservation tagged with a client
+        // pid is dropped when that process dies, so a crashed or killed panel
+        // cannot leave the layout shrunk forever; unowned and other-owner zones
+        // survive an unrelated death.
+        let owned: [String: ScreenStrut] = [
+            "a": ScreenStrut(edge: .top, size: 44, ownerPid: 100),
+            "b": ScreenStrut(edge: .bottom, size: 20, ownerPid: 200),
+            "c": ScreenStrut(edge: .left, size: 10),
+        ]
+        let afterDeath = owned.filter { $0.value.ownerPid != 100 }
+        expectEqual(afterDeath.count, 2, "a dead owner's zone is dropped, the others kept")
+        expect(afterDeath["a"] == nil, "the dead owner's own zone is gone")
+        expect(afterDeath["b"] != nil, "another live owner's zone survives")
+        expect(afterDeath["c"] != nil, "an unowned zone survives an unrelated death")
+
         if failures.isEmpty {
             print("selftest: \(checks) checks, all OK")
             exit(0)
