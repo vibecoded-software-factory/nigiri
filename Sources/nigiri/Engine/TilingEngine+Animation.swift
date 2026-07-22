@@ -431,7 +431,7 @@ extension TilingEngine {
                 // edge with its frame still catching up. Same source of truth as
                 // the ring: the frame just written, never an AX read-back.
                 if trackRing, self.fullscreenWindowRef == nil {
-                    let screen = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+                    let screen = self.currentRawScreenFrame()
                     // Windows NOT in this animation (floating ones, other
                     // columns) keep their decoration: borders.update replaces the
                     // whole set, so feeding it only the animated windows made

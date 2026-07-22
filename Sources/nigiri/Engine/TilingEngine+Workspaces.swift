@@ -146,7 +146,7 @@ extension TilingEngine {
         // layout too left an entered workspace ignoring the strut (window at
         // the raw top, inside the reserved band), even though the same-screen
         // relayout honored it. Park with raw, lay out with usable.
-        let screenFrame = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        let screenFrame = currentRawScreenFrame()
         let usableFrame = usableScreen().frame
         let leaving = workspace
         previousWorkspaceIndex = activeWorkspaceIndex
@@ -328,7 +328,7 @@ extension TilingEngine {
         // workspace (compactWorkspaces then grows a fresh trailing one).
         let targetIndex = min(max(0, number - 1), workspaces.count - 1)
         guard targetIndex != activeWorkspaceIndex else { return }
-        let screenFrame = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        let screenFrame = currentRawScreenFrame()
         guard let column = workspace.removeColumn(at: workspace.focusedIndex) else { return }
         // The fullscreen window cannot travel to another workspace and leave
         // this one still pointing at it: the same invariant detachFromTiling

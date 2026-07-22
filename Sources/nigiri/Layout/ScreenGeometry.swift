@@ -21,13 +21,20 @@ enum ScreenGeometry {
     static var hasUsableScreen: Bool { NSScreen.screens.first != nil }
 
     static func primaryScreenVisibleFrameInAXSpace() -> CGRect {
+        visibleFrameInAXSpace(for: NSScreen.screens.first)
+    }
+
+    // The working area of ANY screen, in AX/CG top-left space. The Y flip is
+    // always against the PRIMARY's height, because the global CG origin is the
+    // primary's top-left - an external monitor at AppKit origin (1470, -124)
+    // maps to AX (1470, 0). visibleFrame already excludes that screen's own
+    // menu bar / Dock; the config struts are carved off on top of that. Falls
+    // back to the primary (then .zero) so a nil screen never crashes a caller.
+    static func visibleFrameInAXSpace(for screen: NSScreen?) -> CGRect {
         guard let primary = NSScreen.screens.first else { return .zero }
-        let full = primary.frame
-        let visible = primary.visibleFrame
-        let flippedY = full.height - visible.origin.y - visible.height
-        // niri's layout { struts }: carved off the working area, so nothing
-        // tiled ever lands there. visibleFrame already excludes the menu bar
-        // and the Dock; struts are on top of that.
+        let target = screen ?? primary
+        let visible = target.visibleFrame
+        let flippedY = primary.frame.height - visible.origin.y - visible.height
         let s = struts
         var frame = CGRect(
             x: visible.origin.x + s.left, y: flippedY + s.top,

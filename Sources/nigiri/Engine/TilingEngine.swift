@@ -48,7 +48,7 @@ final class TilingEngine {
     var elementIndex: [UInt: [ManagedWindow]] = [:]
     func rebuildElementIndex() {
         elementIndex.removeAll(keepingCapacity: true)
-        for ws in workspaces {
+        for ws in allWorkspaces {
             for w in ws.allWindows {
                 elementIndex[CFHash(w.axElement), default: []].append(w)
             }
@@ -101,17 +101,45 @@ final class TilingEngine {
         return merged
     }
 
-    // Numbered workspaces (niri: Mod+1..9) - `workspace` (a computed
-    // property, not a stored one) always refers to whichever is currently
-    // active, so every existing "workspace.columns"/"workspace.focusedIndex"
-    // etc. call site below keeps working completely unchanged; only
-    // Workspace being a reference type makes this drop-in.
-    var workspaces: [Workspace] = [Workspace()]
-    var activeWorkspaceIndex = 0
+    // Multi-monitor: each Output owns its own workspace stack and active index,
+    // and exactly one output is focused. `workspaces`, `activeWorkspaceIndex`,
+    // `previousWorkspaceIndex` and `workspace` are PROXIES onto the focused
+    // output, so every existing "workspace.columns"/"workspaces[i]"/etc. call
+    // site below keeps working completely unchanged - it now operates on the
+    // focused output. `outputs` is never empty (a display disappearing migrates
+    // its workspaces rather than dropping the last one), so the proxies are
+    // always valid. syncOutputs() reconciles it against NSScreen.screens.
+    var outputs: [Output] = [
+        Output(
+            displayID: NSScreen.screens.first.flatMap(Output.displayID(of:)) ?? 0,
+            name: TilingEngine.outputName(NSScreen.screens.first) ?? "primary",
+            screen: NSScreen.screens.first)
+    ]
+    var focusedOutputIndex = 0
+    var focusedOutput: Output { outputs[min(max(0, focusedOutputIndex), outputs.count - 1)] }
+
+    var workspaces: [Workspace] {
+        get { focusedOutput.workspaces }
+        set { focusedOutput.workspaces = newValue }
+    }
+    var activeWorkspaceIndex: Int {
+        get { focusedOutput.activeWorkspaceIndex }
+        set { focusedOutput.activeWorkspaceIndex = newValue }
+    }
     // Where the last focus-workspace jump CAME from (niri's
     // focus-workspace-previous) - updated inside focusWorkspace.
-    var previousWorkspaceIndex = 0
-    var workspace: Workspace { workspaces[activeWorkspaceIndex] }
+    var previousWorkspaceIndex: Int {
+        get { focusedOutput.previousWorkspaceIndex }
+        set { focusedOutput.previousWorkspaceIndex = newValue }
+    }
+    var workspace: Workspace { focusedOutput.activeWorkspace }
+
+    // Every workspace across every output. The known-window index, the purge
+    // and the title/refuse passes must span this - NOT just the focused
+    // output's `workspaces` - or a window living on another monitor looks
+    // brand-new every relayout and gets yanked onto the focused output.
+    var allWorkspaces: [Workspace] { outputs.flatMap { $0.workspaces } }
+
     let watcher = WindowWatcher()
     let ring = FocusRingOverlay()
     let borders = InactiveDecorations()
@@ -437,9 +465,23 @@ final class TilingEngine {
     var reservedStruts: [String: ScreenStrut] = [:]
 
     func usableScreen() -> (frame: CGRect, usableWidth: CGFloat) {
-        let full = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        usableScreen(for: focusedOutput)
+    }
+
+    // The working area of a specific output (its raw visible frame minus any
+    // reserved struts). The no-argument form above is the focused output, which
+    // is what every existing single-output caller wants.
+    func usableScreen(for output: Output) -> (frame: CGRect, usableWidth: CGFloat) {
+        let full = ScreenGeometry.visibleFrameInAXSpace(for: output.screen)
         let frame = ScreenStruts.inset(full, by: Array(reservedStruts.values))
         return (frame, frame.width - 2 * ColumnLayoutEngine.gap)
+    }
+
+    // The raw (pre-strut) visible frame of the focused output, in AX space -
+    // the multi-monitor replacement for callers that used to reach straight for
+    // the primary screen to park/stash windows on "the current" monitor.
+    func currentRawScreenFrame() -> CGRect {
+        ScreenGeometry.visibleFrameInAXSpace(for: focusedOutput.screen)
     }
 
     // Drop every zone a now-dead process reserved. Returns whether anything

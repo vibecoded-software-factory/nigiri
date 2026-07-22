@@ -306,6 +306,10 @@ extension TilingEngine {
             print("[layout] no screen at all: postponing the layout")
             return
         }
+        // Keep the Output set in step with the live displays before laying
+        // anything out - idempotent when nothing changed, and it re-homes the
+        // focus and migrates windows when a monitor was plugged or unplugged.
+        syncOutputs()
         let t0 = debugEnabled ? DispatchTime.now() : nil
         // Focus is tracked by IDENTITY across the purge/adopt below, not by
         // index: closing a column to the LEFT of the focused one shifted
@@ -397,7 +401,7 @@ extension TilingEngine {
         // Collected from inside the predicate because that is where the
         // verdict is reached (and where the window is still in the model).
         var closed: [ManagedWindow] = []
-        for ws in workspaces {
+        for ws in allWorkspaces {
             for column in ws.columns {
                 // The height cache and the row focus are the mutator's job
                 // now; a purge only has to say what left.
@@ -447,7 +451,7 @@ extension TilingEngine {
         // app's window list). What the writes report is the ground truth, so
         // three consecutive refusals demote it to the floating layer, where
         // nigiri never repositions anything.
-        for ws in workspaces {
+        for ws in allWorkspaces {
             var demoted: [ManagedWindow] = []
             for column in ws.columns {
                 demoted.append(contentsOf: column.removeWindows { $0.positionRefusals >= 3 })
@@ -494,7 +498,7 @@ extension TilingEngine {
         func probedTileable(_ window: ManagedWindow) -> Bool {
             current.contains { CFEqual($0.0, window.axElement) && $0.3 == .tiled }
         }
-        for ws in workspaces {
+        for ws in allWorkspaces {
             for window in ws.tiledWindows where window.isDialog && probedTileable(window) {
                 window.isDialog = false
             }
@@ -525,7 +529,7 @@ extension TilingEngine {
 
         // A fullscreen window that closed would otherwise keep every other
         // window parked off-screen forever, with no decorations.
-        for ws in workspaces {
+        for ws in allWorkspaces {
             if let full = ws.fullscreenWindow,
                 !ws.allWindows.contains(where: { $0 === full })
             {
@@ -533,7 +537,7 @@ extension TilingEngine {
             }
         }
 
-        let knownElements = workspaces.flatMap { ws in ws.allWindows.map { $0.axElement } }
+        let knownElements = allWorkspaces.flatMap { ws in ws.allWindows.map { $0.axElement } }
         // Genuinely new windows always open on the active workspace, and -
         // matching niri - as a new column immediately to the RIGHT of the
         // focused one, taking focus, so the strip scrolls to reveal them at
@@ -567,6 +571,14 @@ extension TilingEngine {
             let rule = matchingWindowRule(appName: appName, bundleID: app?.bundleIdentifier, title: title)
             let window = ManagedWindow(axElement: element, pid: pid, title: title)
             window.isDialog = kind == .dialog
+            // On INITIAL adoption (cataloguing an existing session) a window
+            // belongs to the output it is physically on, so windows already on
+            // the external monitor are not yanked onto the primary. A genuinely
+            // new window opens on the focused output, niri-style.
+            let adoptWorkspace =
+                isInitialAdoption
+                ? (outputContaining(WindowMover.currentFrame(element)) ?? focusedOutput).activeWorkspace
+                : workspace
             // A rule can force either way; with no rule, dialogs float
             // (niri's compute_open_floating). Floating means part of the
             // model - focus ring, floating navigation, workspace
@@ -629,14 +641,14 @@ extension TilingEngine {
                     _ = ColumnLayoutEngine.applyFrame(
                         window,
                         target: parkedOffScreen(
-                            frame, screenFrame: ScreenGeometry.primaryScreenVisibleFrameInAXSpace()))
+                            frame, screenFrame: currentRawScreenFrame()))
                 }
                 applyOpenState()
                 print("window-rule: \(window.title) -> workspace \(wsNumber)")
                 continue
             }
             if shouldFloat {
-                workspace.floatingWindows.append(window)
+                adoptWorkspace.floatingWindows.append(window)
                 if !isInitialAdoption {
                     // macOS focuses a freshly-opened dialog itself; mirror
                     // that in the model so the ring lands on it immediately.
@@ -652,7 +664,7 @@ extension TilingEngine {
                 applyWidthRule(c)
                 c.setWindows([window])
                 if isInitialAdoption {
-                    workspace.appendColumn(c)
+                    adoptWorkspace.appendColumn(c)
                 } else {
                     let insertAt =
                         workspace.columns.isEmpty
@@ -803,6 +815,9 @@ extension TilingEngine {
             "{\"event\":\"layout\",\"workspace\":\(activeWorkspaceIndex + 1),\"columns\":\(workspace.columns.count)}"
         )
         broadcastWindowDiff()
+        // The focused output was just laid out above; every OTHER output's
+        // active workspace still needs its windows placed on its own monitor.
+        layoutAllOutputs()
         if let t0 {
             let ms = Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1_000_000
             print("[timing] full relayout(): \(String(format: "%.1f", ms))ms")
@@ -866,7 +881,7 @@ extension TilingEngine {
             watcher.applyingLayout {
                 if let full = fullscreenWindowRef {
                     _ = ColumnLayoutEngine.applyFrame(
-                        full, target: ScreenGeometry.primaryScreenVisibleFrameInAXSpace())
+                        full, target: currentRawScreenFrame())
                 }
             }
             return false
@@ -878,7 +893,7 @@ extension TilingEngine {
         if let full = fullscreenWindowRef {
             watcher.applyingLayout {
                 _ = ColumnLayoutEngine.applyFrame(
-                    full, target: ScreenGeometry.primaryScreenVisibleFrameInAXSpace())
+                    full, target: currentRawScreenFrame())
                 for w in workspace.allWindows where w !== full {
                     guard let current = WindowMover.currentFrame(w.axElement) else { continue }
                     // Floating windows are never re-laid-out by the tiling
@@ -943,7 +958,7 @@ extension TilingEngine {
         // frame (no gaps), and the strip underneath keeps its own layout -
         // leaving fullscreen restores everything without a re-tile.
         if let full = fullscreenWindowRef {
-            let raw = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+            let raw = currentRawScreenFrame()
             if let idx = targets.firstIndex(where: { $0.window === full }) {
                 targets[idx].frame = raw
             } else {

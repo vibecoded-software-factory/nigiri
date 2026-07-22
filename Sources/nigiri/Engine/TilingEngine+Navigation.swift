@@ -163,7 +163,7 @@ extension TilingEngine {
         let targetIndex = min(max(0, number - 1), max(0, workspaces.count - 1))
         guard targetIndex != activeWorkspaceIndex else { return }
         while workspaces.count <= targetIndex { workspaces.append(Workspace()) }
-        let screenFrame = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        let screenFrame = currentRawScreenFrame()
         // Where it lives decides where it lands: a floating window (or a
         // dialog, which can never be tiled - it refuses the writes) went into
         // a COLUMN on the other workspace, which is the invariant
