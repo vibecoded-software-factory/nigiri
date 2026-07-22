@@ -65,6 +65,27 @@ extension TilingEngine {
             "focus-column-\(first ? "first" : "last") -> column \(workspace.focusedIndex) (\(describeFocus()))"
         )
     }
+    // Focus a specific window by its id, wherever it lives - niri's
+    // FocusWindow, and the action a taskbar or window switcher needs. Points
+    // the model at the window inside its workspace, then either reflows in
+    // place (same workspace) or animates a switch to the workspace it is on,
+    // which lands on this window because the focus was set first.
+    func focusWindowByID(_ id: UInt64) {
+        guard let w = windowWithID(id), let location = locate(w) else {
+            print("focus-window-by-id: no window \(id)")
+            return
+        }
+        let targetWorkspace = location.workspaceIndex
+        focusInModel(w, activateWorkspace: false)
+        if targetWorkspace == activeWorkspaceIndex {
+            reflow()
+            focusCurrentColumn()
+        } else {
+            focusWorkspace(targetWorkspace + 1)
+        }
+        print("focus-window-by-id \(id) -> \(describeFocus())")
+    }
+
     // Navigates WITHIN the focused column's vertical stack - a no-op while
     // that column only has one window, which is still the common case until
     // consume-or-expel is used.
