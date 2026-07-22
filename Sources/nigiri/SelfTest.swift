@@ -216,6 +216,25 @@ enum SelfTest {
         }
         expect(SizeChange.parse("abc") == nil, "an argument that is not a size is rejected")
 
+        // --- niri Action decoding ------------------------------------------
+        // REGRESSION: a bar clicking a workspace sends
+        // {"Action":{"FocusWorkspace":{"reference":{"Id":5}}}}. The nested
+        // reference used to be dropped, so the click resolved to a bare
+        // focus-workspace and did nothing.
+        func actionLine(_ json: String) -> String? {
+            if case .action(let line) = NiriProtocol.parse(json).request { return line }
+            return nil
+        }
+        expectEqual(
+            actionLine("{\"Action\":{\"FocusColumnLeft\":{}}}"), "focus-column-left",
+            "a no-arg Action decodes to its kebab line")
+        expectEqual(
+            actionLine("{\"Action\":{\"FocusWorkspace\":{\"reference\":{\"Id\":5}}}}"),
+            "focus-workspace id=5", "FocusWorkspace by Id carries the reference as id=5")
+        expectEqual(
+            actionLine("{\"Action\":{\"FocusWorkspace\":{\"reference\":{\"Index\":2}}}}"),
+            "focus-workspace index=2", "FocusWorkspace by Index carries index=2")
+
         // --- key combos ----------------------------------------------------
         // REGRESSION: virtual keycodes are physical POSITIONS. On Workman the
         // key that types "f" is where QWERTY has "u", so Mod+Shift+F fired

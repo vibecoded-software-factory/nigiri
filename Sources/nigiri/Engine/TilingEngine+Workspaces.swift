@@ -127,6 +127,16 @@ extension TilingEngine {
         workspaces.firstIndex { $0.name == name }
     }
 
+    // Focus the workspace carrying this stable id - niri's FocusWorkspace by Id,
+    // which is what a bar sends when a workspace is clicked. The id is not a
+    // position, so map it to one on the focused output; an unknown id is a
+    // no-op.
+    func focusWorkspace(byId id: UInt64) {
+        if let index = workspaces.firstIndex(where: { $0.id == id }) {
+            focusWorkspace(index + 1)
+        }
+    }
+
     // niri's focus-workspace N (1-based, Mod+1..9). Dynamic model: asking
     // for a number past the end lands on the trailing empty workspace
     // instead of manufacturing a stack of empty ones.
