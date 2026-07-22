@@ -700,7 +700,19 @@ enum ColumnLayoutEngine {
             w.positionRefusals = 0
             wrote = true
         } catch let error as WindowMover.MoveError {
-            if case .positionNotSettable = error { w.notePositionRefusal() }
+            if case .positionNotSettable = error {
+                // A window in native fullscreen (a fullscreened video, the green
+                // button) legitimately refuses position writes - that is
+                // temporary, not the permanent "refuses to tile" the demotion is
+                // for. Counting it demoted the window to floating, and it came
+                // back stacked over its neighbour instead of in its column.
+                let fullscreen: Bool = AX.attribute(w.axElement, "AXFullScreen") ?? false
+                if fullscreen {
+                    w.positionRefusals = 0
+                } else {
+                    w.notePositionRefusal()
+                }
+            }
             print("[layout] skipping \(w.title): \(error.description)")
         } catch {
             print("[layout] skipping \(w.title): unexpected error")
