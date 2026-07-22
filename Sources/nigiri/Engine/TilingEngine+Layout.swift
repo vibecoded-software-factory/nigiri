@@ -200,8 +200,24 @@ extension TilingEngine {
                     {
                         result.append(
                             (w, app.processIdentifier, title.isEmpty ? "(no title)" : title, .tiled))
-                    } else {
+                    } else if Self.isDialogLike(
+                        title: title,
+                        hasDefaultButton: AX.hasAttribute(w, kAXDefaultButtonAttribute as String),
+                        hasCancelButton: AX.hasAttribute(w, kAXCancelButtonAttribute as String))
+                    {
                         result.append((w, app.processIdentifier, title.isEmpty ? "(dialog)" : title, .dialog))
+                    } else {
+                        // A dialog-subrole window with no title AND no commit
+                        // buttons is not a real dialog - it is chrome: a shell
+                        // panel or bar (borderless, no controls). Managing it
+                        // would tile or, worse, draw an inactive border around a
+                        // panel that is meant to be left completely alone -
+                        // reported live. Real dialogs (Open/Save) always have a
+                        // title or Open/Cancel buttons, so this excludes only
+                        // chrome.
+                        debugLog(
+                            "[collect] skip \(name): dialog subrole, no title or buttons (panel/chrome)")
+                        continue
                     }
                 }
                 watcher.watchForDestruction(w, pid: app.processIdentifier)
