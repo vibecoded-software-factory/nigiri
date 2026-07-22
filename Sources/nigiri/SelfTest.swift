@@ -1674,6 +1674,39 @@ enum SelfTest {
         expectEqual(otherEdge.bottom, 70, "a Dock-sized system inset survives a smaller reservation")
         expectEqual(otherEdge.top, 32, "edges combine independently")
 
+        // Refusal memoization gate (refusalVerdict): a busy app's stale
+        // read-back must NOT latch as "the app's answer" on first sight -
+        // that memorized lie froze visibly-wrong layouts until a restart.
+        // Only the same divergent answer seen twice in a row is a refusal.
+        let asked = CGRect(x: 10, y: 54, width: 720, height: 892)
+        let agreedAnswer = CGRect(x: 10.4, y: 54, width: 719.6, height: 892)
+        expect(
+            ColumnLayoutEngine.refusalVerdict(target: asked, actual: agreedAnswer, candidate: nil)
+                == .agreed,
+            "an answer within tolerance is agreement, no memo churn")
+        let staleAnswer = CGRect(x: 260, y: 54, width: 240, height: 892)
+        expect(
+            ColumnLayoutEngine.refusalVerdict(target: asked, actual: staleAnswer, candidate: nil)
+                == .unconfirmed,
+            "a first divergent answer is only a sighting - retry, don't latch")
+        expect(
+            ColumnLayoutEngine.refusalVerdict(
+                target: asked, actual: staleAnswer, candidate: (asked, staleAnswer))
+                == .confirmedRefusal,
+            "the same divergent answer twice in a row latches as a real refusal")
+        expect(
+            ColumnLayoutEngine.refusalVerdict(
+                target: asked, actual: CGRect(x: 10, y: 54, width: 500, height: 892),
+                candidate: (asked, staleAnswer))
+                == .unconfirmed,
+            "a DIFFERENT divergent answer restarts confirmation instead of latching")
+        expect(
+            ColumnLayoutEngine.refusalVerdict(
+                target: CGRect(x: 740, y: 54, width: 720, height: 892), actual: staleAnswer,
+                candidate: (asked, staleAnswer))
+                == .unconfirmed,
+            "a candidate for another request never confirms this one")
+
         // Owner-pid GC (dropStruts' rule): a reservation tagged with a client
         // pid is dropped when that process dies, so a crashed or killed panel
         // cannot leave the layout shrunk forever; unowned and other-owner zones

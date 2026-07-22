@@ -554,6 +554,7 @@ extension TilingEngine {
                 // first layout pass skip it as "already refused".
                 window.lastRequestedFrame = nil
                 window.lastActualFrame = nil
+                window.refusalCandidate = nil
                 let c = Column()
                 c.setWindows([window])
                 // Appended, not inserted: end-of-strip never shifts an
