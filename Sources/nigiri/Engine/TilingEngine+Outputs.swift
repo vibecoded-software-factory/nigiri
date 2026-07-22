@@ -97,6 +97,19 @@ extension TilingEngine {
         for output in outputs where output !== focusedOutput { layoutOutput(output) }
     }
 
+    // Which output and workspace a window element lives on, searched across
+    // every output - used by focus-follows-window to move the focus to the
+    // monitor a clicked window is on.
+    func locateWindow(_ element: AXUIElement) -> (output: Int, workspace: Int)? {
+        for (oi, output) in outputs.enumerated() {
+            for (wi, ws) in output.workspaces.enumerated()
+            where ws.allWindows.contains(where: { CFEqual($0.axElement, element) }) {
+                return (oi, wi)
+            }
+        }
+        return nil
+    }
+
     // Make `output` the focused one and bring its active workspace to the fore:
     // relayout now targets it (the proxies follow the focus), and its focused
     // column is raised.

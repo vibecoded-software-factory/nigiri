@@ -242,6 +242,16 @@ extension TilingEngine {
     }
 
     func syncFocusIndex(focusedElement: AXUIElement) {
+        // Focus-follows-window across monitors: if the newly focused window
+        // lives on another output, make that output (and the workspace holding
+        // the window) focused first, so the ring, navigation and new-window
+        // placement all follow the user to the monitor they clicked on.
+        if let loc = locateWindow(focusedElement), loc.output != focusedOutputIndex {
+            focusedOutputIndex = loc.output
+            focusedOutput.activeWorkspaceIndex = loc.workspace
+            print("focus-follows-window -> monitor \(focusedOutput.name)")
+            emitWorkspacesChanged()
+        }
         if let idx = workspace.columns.firstIndex(where: { col in
             col.windows.contains { CFEqual($0.axElement, focusedElement) }
         }) {

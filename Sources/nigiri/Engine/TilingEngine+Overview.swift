@@ -257,7 +257,8 @@ extension TilingEngine {
     // whose stream failed.
     @available(macOS 14.0, *)
     func startOverviewStreams(_ resolved: [Int: SCWindow]) {
-        let scale = usableScreen().frame.width > 0 ? (NSScreen.screens.first?.backingScaleFactor ?? 2) : 2
+        let scale =
+            usableScreen().frame.width > 0 ? (focusedOutput.screen?.backingScaleFactor ?? 2) : 2
         var sizeByID: [UInt64: CGSize] = [:]
         for target in overviewPanel.thumbnailTargets(scale: scale) { sizeByID[target.id] = target.size }
         var starting: [(id: UInt64, window: SCWindow, size: CGSize)] = []
