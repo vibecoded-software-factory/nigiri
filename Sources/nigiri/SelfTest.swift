@@ -273,6 +273,25 @@ enum SelfTest {
         expect(NigiriConfig.parseColor("#7355a6") != nil, "color with #")
         expect(NigiriConfig.parseColor("7355a6") != nil, "color without #")
 
+        // REGRESSION: niri's real config writes `include "x.kdl" //comment`.
+        // Trimming quotes off both ends left `x.kdl" //comment` and the include
+        // silently failed - so nigiri reading niri's own config lost every file
+        // it pulled in with a trailing comment (its window-rules, among others).
+        let incDir = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("nigiri-inc-\(getpid())")
+        try? FileManager.default.createDirectory(
+            atPath: incDir, withIntermediateDirectories: true)
+        try? "gaps 42".write(
+            toFile: (incDir as NSString).appendingPathComponent("child.kdl"),
+            atomically: true, encoding: .utf8)
+        var incVisited: Set<String> = []
+        let incExpanded = NigiriConfig.expandIncludes(
+            "include \"child.kdl\" //dms overrides", baseDir: incDir, visited: &incVisited)
+        expect(
+            incExpanded.contains("gaps 42"),
+            "an include with a trailing comment still resolves")
+        try? FileManager.default.removeItem(atPath: incDir)
+
         // REGRESSION: the tokenizer eats the quotes, so the bind's action has
         // to survive re-quoting - `open -a Google Chrome` opens nothing.
         expect(
