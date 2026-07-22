@@ -41,7 +41,12 @@ extension TilingEngine {
         // the action run on it.
         if isOverviewActive {
             if handleOverviewPanelAction(name, parts) { return }
-            if name != "toggle-overview" {
+            // Infrastructure actions are not the user acting on a window: a
+            // panel's periodic reserve-zone heartbeat arriving through this
+            // same dispatch used to bypass+collapse the overview within
+            // seconds of opening it (instantly, with a chatty client).
+            let infrastructure: Set<String> = ["toggle-overview", "reserve-zone", "clear-zone"]
+            if !infrastructure.contains(name) {
                 overviewFocusSelectedInModel()
                 exitOverview()
             }
@@ -207,22 +212,29 @@ extension TilingEngine {
                 if clamped != CGFloat(size) {
                     print("[strut] reserve \(parts[1]) size \(Int(size)) clamped to \(Int(clamped))")
                 }
-                reservedStruts[String(parts[1])] = ScreenStrut(
-                    edge: edge, size: clamped, ownerPid: pid)
-                print(
-                    "[strut] reserve \(parts[1]) \(edge.rawValue) \(Int(clamped)) pid=\(pid.map(String.init) ?? "-") (total: \(reservedStruts.count))"
-                )
+                let strut = ScreenStrut(edge: edge, size: clamped, ownerPid: pid)
+                // Heartbeat re-assertions re-send an IDENTICAL reservation
+                // every few seconds; re-applying it cleared every height
+                // cache and ran a full relayout each time, all day long.
+                // Only an actual change pays for one.
+                if reservedStruts[String(parts[1])] != strut {
+                    reservedStruts[String(parts[1])] = strut
+                    print(
+                        "[strut] reserve \(parts[1]) \(edge.rawValue) \(Int(clamped)) pid=\(pid.map(String.init) ?? "-") (total: \(reservedStruts.count))"
+                    )
+                    applyStrutChange()
+                }
             } else if parts.count >= 2 {
                 if reservedStruts.removeValue(forKey: String(parts[1])) != nil {
                     print("[strut] clear \(parts[1]) via zero/malformed reserve")
+                    applyStrutChange()
                 }
             }
-            applyStrutChange()
         case "clear-zone":
             if parts.count >= 2, reservedStruts.removeValue(forKey: String(parts[1])) != nil {
                 print("[strut] clear \(parts[1]) (total: \(reservedStruts.count))")
+                applyStrutChange()
             }
-            applyStrutChange()
         case "consume-or-expel-window-left", "consume-or-expel-left": consumeOrExpel(delta: -1)
         case "consume-or-expel-window-right", "consume-or-expel-right": consumeOrExpel(delta: 1)
         case "consume-window-into-column": consumeWindowIntoColumn()
