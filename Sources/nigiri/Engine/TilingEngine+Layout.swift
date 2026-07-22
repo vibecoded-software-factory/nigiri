@@ -337,6 +337,16 @@ extension TilingEngine {
         // anything out - idempotent when nothing changed, and it re-homes the
         // focus and migrates windows when a monitor was plugged or unplugged.
         syncOutputs()
+        // Drop any reserved zone whose owning process has died before this pass
+        // reads the usable area, and invalidate the height caches the way
+        // applyStrutChange would - otherwise a panel that crashed without
+        // clearing its strut leaves the layout shrunk forever. This pass relays
+        // out below, so no separate relayout is needed.
+        if pruneDeadStruts() {
+            for ws in workspaces {
+                for column in ws.columns { column.cachedHeights = nil }
+            }
+        }
         let t0 = debugEnabled ? DispatchTime.now() : nil
         // Focus is tracked by IDENTITY across the purge/adopt below, not by
         // index: closing a column to the LEFT of the focused one shifted

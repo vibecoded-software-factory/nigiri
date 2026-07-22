@@ -153,6 +153,10 @@ final class TilingEngine {
     // of silently dropped, and an identical re-request can join the
     // in-flight animation instead of restarting it (see animateFrames).
     var frameAnimationTimer: DispatchSourceTimer?
+    // Slow sweep that drops a reserved zone whose owner died without a terminate
+    // notification (see start()). Retains the engine, which is fine: it is the
+    // process's single long-lived instance.
+    var strutPruneTimer: Timer?
     var frameAnimationTargets: [(window: ManagedWindow, frame: CGRect)] = []
     var frameAnimationCompletions: [(_ cancelled: Bool) -> Void] = []
     // Fire at the settle tick itself, BEFORE the verification breather -
@@ -494,6 +498,25 @@ final class TilingEngine {
     func dropStruts(ownerPid pid: pid_t) -> Bool {
         let before = reservedStruts.count
         reservedStruts = reservedStruts.filter { $0.value.ownerPid != pid }
+        return reservedStruts.count != before
+    }
+
+    // The backstop for dropStruts(ownerPid:): drop any reservation whose owning
+    // process no longer exists. didTerminateApplicationNotification is the fast
+    // path, but it is not guaranteed - a launchd helper that crash-loops, or a
+    // process macOS never reported as an app, can die without it ever firing,
+    // and a stuck strut then shrinks the layout with nothing on screen to
+    // explain it (seen live). kill(pid, 0) probes existence without signalling:
+    // ESRCH means the process is gone; EPERM means it is alive but ours to
+    // signal it is not, so keep it. Returns whether anything was removed.
+    @discardableResult
+    func pruneDeadStruts() -> Bool {
+        let before = reservedStruts.count
+        reservedStruts = reservedStruts.filter { _, strut in
+            guard let pid = strut.ownerPid else { return true }  // no owner: kept until clear-zone
+            if kill(pid, 0) == 0 { return true }
+            return errno != ESRCH
+        }
         return reservedStruts.count != before
     }
 
@@ -989,6 +1012,18 @@ final class TilingEngine {
                     if self.dropStruts(ownerPid: pid) { self.applyStrutChange() }
                 }
                 requestRelayout.run()
+            }
+        }
+
+        // Backstop for a reservation whose owner died without the terminate
+        // notification firing - a non-app process, or a helper that crash-looped
+        // past it. didTerminate above is the fast path; this slow sweep catches
+        // the rest so the layout can never stay shrunk with nothing on screen to
+        // explain it. It only probes pids while a zone is actually reserved.
+        strutPruneTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.reservedStruts.isEmpty else { return }
+                if self.pruneDeadStruts() { self.applyStrutChange() }
             }
         }
 
