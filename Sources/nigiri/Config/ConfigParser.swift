@@ -210,9 +210,18 @@ extension NigiriConfig {
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("include ") || trimmed.hasPrefix("include\t") {
-                // include "path" - the path is the quoted token.
+                // include "path" - the path is the FIRST double-quoted token.
+                // Extract it by delimiters, not by trimming quotes off both
+                // ends: niri's real config writes `include "x.kdl" //comment`,
+                // and stripping surrounding quotes leaves `x.kdl" //comment`.
                 let inner = trimmed.dropFirst("include".count).trimmingCharacters(in: .whitespaces)
-                let rel = inner.trimmingCharacters(in: CharacterSet(charactersIn: "\" \t"))
+                guard let open = inner.firstIndex(of: "\""),
+                    let close = inner[inner.index(after: open)...].firstIndex(of: "\"")
+                else {
+                    print("[config] malformed include: \(inner)")
+                    continue
+                }
+                let rel = String(inner[inner.index(after: open)..<close])
                 let resolved =
                     (rel as NSString).isAbsolutePath ? rel : (baseDir as NSString).appendingPathComponent(rel)
                 let real =

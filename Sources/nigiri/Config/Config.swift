@@ -231,8 +231,18 @@ struct NigiriConfig {
     // niri's screenshot-path, with strftime placeholders.
     var screenshotPath = "~/Desktop/Screenshot %Y-%m-%d %H.%M.%S.png"
 
+    // nigiri reads niri's OWN config.kdl when it's present, so one dotfile
+    // drives niri on Linux and nigiri on macOS - the Wayland-only sections it
+    // can't honour are simply skipped. Its own `.config/nigiri/config.kdl` is
+    // the fallback and the target for the first-run default (we never author a
+    // niri config on the user's behalf). writeDefaultIfMissing() keys off this
+    // same resolution: when niri's config exists, `path` points at it, it's
+    // found, and no default gets written.
     static var path: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent(".config/nigiri/config.kdl")
+        let home = NSHomeDirectory() as NSString
+        let niri = home.appendingPathComponent(".config/niri/config.kdl")
+        if FileManager.default.fileExists(atPath: niri) { return niri }
+        return home.appendingPathComponent(".config/nigiri/config.kdl")
     }
 
     // The character each physical key produces IN THE ACTIVE LAYOUT, built

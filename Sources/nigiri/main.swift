@@ -48,8 +48,12 @@ if cliArgs.first == "selftest" {
 // breaks on shows up here (the warnings go to stdout) instead of being
 // discovered because the binds don't respond.
 if cliArgs.first == "check-config" {
-    let path = (cliArgs.count > 1 ? cliArgs[1] : "~/.config/nigiri/config.kdl")
-        .replacingOccurrences(of: "~", with: NSHomeDirectory())
+    // Default to the SAME path the engine resolves (niri's config when present,
+    // nigiri's otherwise), so `check-config` reports on what actually loads.
+    let path =
+        (cliArgs.count > 1
+            ? cliArgs[1].replacingOccurrences(of: "~", with: NSHomeDirectory())
+            : NigiriConfig.path)
     guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
         print("cannot read \(path)")
         exit(1)
