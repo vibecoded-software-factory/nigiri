@@ -264,7 +264,10 @@ final class TilingEngine {
     var pendingDrop: ColumnLayoutEngine.InsertPosition?
     // id -> title as last broadcast over the event stream, for the diff that
     // produces WindowOpenedOrChanged / WindowClosed.
-    var lastBroadcastWindows: [UInt64: String] = [:]
+    var lastBroadcastWindows: [UInt64: WindowBroadcastSnapshot] = [:]
+    // Per-workspace active window at last broadcast, for
+    // WorkspaceActiveWindowChanged (keyed by workspace id).
+    var lastBroadcastActiveWindows: [UInt64: UInt64] = [:]
     // screenshot-path, with strftime placeholders, for the screenshot actions.
     var screenshotPath = "~/Desktop/Screenshot %Y-%m-%d %H.%M.%S.png"
     let overviewChrome = OverviewChrome()
