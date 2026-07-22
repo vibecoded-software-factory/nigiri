@@ -119,7 +119,7 @@ extension TilingEngine {
         guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else { return }
         let w = workspace.floatingWindows[workspace.floatingFocusedIndex]
         guard let frame = settledFrame(of: w) else { return }
-        let screenFrame = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+        let screenFrame = currentRawScreenFrame()
         var target = frame
         target.size.width = max(50, frame.width + screenFrame.width * widthDeltaPercent / 100)
         target.size.height = max(50, frame.height + screenFrame.height * heightDeltaPercent / 100)
@@ -910,7 +910,7 @@ extension TilingEngine {
             // (center-focused-column "never" always uses +50,+50, never the
             // (0,0) alternative reserved for "always" mode).
             if let currentFrame = WindowMover.currentFrame(window.axElement) {
-                let screenFrame = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+                let screenFrame = currentRawScreenFrame()
                 var newOrigin = CGPoint(x: currentFrame.origin.x + 50, y: currentFrame.origin.y + 50)
                 newOrigin.x = min(newOrigin.x, screenFrame.maxX - currentFrame.width)
                 newOrigin.y = min(newOrigin.y, screenFrame.maxY - currentFrame.height)

@@ -149,6 +149,11 @@ extension NigiriConfig {
             Mod+Home  { focus-column-first; }
             Mod+End   { focus-column-last; }
 
+            Mod+Ctrl+Left        { focus-monitor-left; }
+            Mod+Ctrl+Right       { focus-monitor-right; }
+            Mod+Shift+Ctrl+Left  { move-column-to-monitor-left; }
+            Mod+Shift+Ctrl+Right { move-column-to-monitor-right; }
+
             Mod+1 { focus-workspace 1; }
             Mod+2 { focus-workspace 2; }
             Mod+3 { focus-workspace 3; }

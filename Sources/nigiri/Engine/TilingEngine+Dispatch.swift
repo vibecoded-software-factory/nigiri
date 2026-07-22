@@ -108,6 +108,16 @@ extension TilingEngine {
         case "switch-preset-window-width-back": switchPresetWindowWidth(delta: -1)
         case "focus-column-first": focusColumnEdge(first: true)
         case "focus-column-last": focusColumnEdge(first: false)
+        // niri's focus-monitor-* / move-column-to-monitor-* (multi-monitor).
+        // move-window-to-monitor is aliased to the column form.
+        case "focus-monitor-left": focusMonitor(.left)
+        case "focus-monitor-right": focusMonitor(.right)
+        case "focus-monitor-up": focusMonitor(.up)
+        case "focus-monitor-down": focusMonitor(.down)
+        case "move-column-to-monitor-left", "move-window-to-monitor-left": moveColumnToMonitor(.left)
+        case "move-column-to-monitor-right", "move-window-to-monitor-right": moveColumnToMonitor(.right)
+        case "move-column-to-monitor-up", "move-window-to-monitor-up": moveColumnToMonitor(.up)
+        case "move-column-to-monitor-down", "move-window-to-monitor-down": moveColumnToMonitor(.down)
         case "focus-workspace":
             if let n = intArg {
                 focusWorkspace(n)
