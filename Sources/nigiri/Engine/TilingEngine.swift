@@ -969,6 +969,7 @@ final class TilingEngine {
 
         // niri's request shapes and the older bare-word ones, one entry point.
         msgServer.onRequest = { request in self.handleMsgRequest(request) }
+        msgServer.onSubscribe = { self.currentStateLines() }
         msgServer.start()
 
         // ---- Mod+drag (mouse) ----
