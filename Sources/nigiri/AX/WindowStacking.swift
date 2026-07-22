@@ -56,6 +56,39 @@ enum WindowStacking {
         }
     }
 
+    // The frames of every window sitting ABOVE the normal level (layer != 0),
+    // grouped by owning pid. These are the macOS analogue of Wayland layer
+    // surfaces: status bars, panels, HUDs and system overlays - the things a
+    // tiling WM must never adopt as a toplevel. niri never sees them because
+    // in Wayland they are not toplevels at all; here a bar drawn by a shell
+    // (a borderless window pinned to the status-bar level) otherwise looks
+    // like an ordinary window and gets tiled into a column.
+    //
+    // Grouped by pid so the caller can skip the whole check for an app that
+    // has no elevated window (every ordinary app), paying the per-window frame
+    // read only for the few processes that actually own a panel.
+    static func elevatedFramesByPid(
+        excludingPid excluded: pid_t = ProcessInfo.processInfo.processIdentifier
+    )
+        -> [pid_t: [CGRect]]
+    {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let raw = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return [:]
+        }
+        var byPid: [pid_t: [CGRect]] = [:]
+        for entry in raw {
+            guard let layer = entry[kCGWindowLayer as String] as? Int, layer != 0,
+                let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid != excluded,
+                let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat],
+                let x = bounds["X"], let y = bounds["Y"],
+                let width = bounds["Width"], let height = bounds["Height"]
+            else { continue }
+            byPid[pid, default: []].append(CGRect(x: x, y: y, width: width, height: height))
+        }
+        return byPid
+    }
+
     // How deep each window sits, 0 being the frontmost. Pure, so the matching
     // is covered by the selftest rather than by looking at a screen.
     //
