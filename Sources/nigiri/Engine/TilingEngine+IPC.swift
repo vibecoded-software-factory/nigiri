@@ -17,6 +17,7 @@ extension TilingEngine {
         _ w: ManagedWindow, workspaceIndex: Int, column: Int?, row: Int?, floating: Bool
     ) -> [String: Any] {
         var entry: [String: Any] = [
+            "id": Int(w.id),
             "title": w.title,
             "pid": Int(w.pid),
             "workspace": workspaceIndex + 1,
