@@ -246,7 +246,7 @@ extension TilingEngine {
         // macOS-only escape hatch: the real fullscreen Space, which takes
         // the window OUT of the tiling model. niri has no counterpart.
         case "native-fullscreen": nativeFullscreenWindow()
-        case "close-window": closeWindow()
+        case "close-window": closeWindow(id: kvArg("id").flatMap { UInt64($0) })
         case "switch-preset-column-width": switchPresetColumnWidth()
         case "switch-preset-column-width-back": switchPresetColumnWidth(delta: -1)
         case "switch-preset-window-height": switchPresetWindowHeight()
