@@ -1707,6 +1707,30 @@ enum SelfTest {
                 == .unconfirmed,
             "a candidate for another request never confirms this one")
 
+        // Window broadcast diff: niri's WindowOpenedOrChanged fires for ANY
+        // change of the fields its Window carries - the old title-only diff
+        // silently swallowed workspace moves and floating flips.
+        let snapA = WindowBroadcastSnapshot(
+            title: "editor", workspaceId: 1, floating: false, column: 0, row: 0)
+        let snapB = WindowBroadcastSnapshot(
+            title: "browser", workspaceId: 1, floating: false, column: 1, row: 0)
+        var wdiff = WindowBroadcastDiff.changes(old: [:], new: [1: snapA, 2: snapB])
+        expectEqual(wdiff.changed, [1, 2], "every new window is a change")
+        expectEqual(wdiff.closed, [], "nothing closed on first sight")
+        wdiff = WindowBroadcastDiff.changes(old: [1: snapA, 2: snapB], new: [1: snapA, 2: snapB])
+        expect(wdiff.changed.isEmpty && wdiff.closed.isEmpty, "identical state emits nothing")
+        let movedWorkspace = WindowBroadcastSnapshot(
+            title: "editor", workspaceId: 2, floating: false, column: 0, row: 0)
+        wdiff = WindowBroadcastDiff.changes(old: [1: snapA], new: [1: movedWorkspace])
+        expectEqual(wdiff.changed, [1], "a workspace move alone re-emits the window")
+        let nowFloating = WindowBroadcastSnapshot(
+            title: "editor", workspaceId: 1, floating: true, column: nil, row: nil)
+        wdiff = WindowBroadcastDiff.changes(old: [1: snapA], new: [1: nowFloating])
+        expectEqual(wdiff.changed, [1], "a floating flip alone re-emits the window")
+        wdiff = WindowBroadcastDiff.changes(old: [1: snapA, 2: snapB], new: [2: snapB])
+        expectEqual(wdiff.closed, [1], "a vanished window closes")
+        expect(wdiff.changed.isEmpty, "and the survivor stays quiet")
+
         // Owner-pid GC (dropStruts' rule): a reservation tagged with a client
         // pid is dropped when that process dies, so a crashed or killed panel
         // cannot leave the layout shrunk forever; unowned and other-owner zones

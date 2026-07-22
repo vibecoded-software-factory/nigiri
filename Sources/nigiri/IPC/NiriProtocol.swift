@@ -351,21 +351,62 @@ extension TilingEngine {
     // niri emits WindowOpenedOrChanged / WindowClosed per window; the model
     // here is rebuilt wholesale by relayout, so the events come from a diff
     // against the last broadcast rather than from a dozen mutation sites.
+    // The snapshot covers everything niri's Window carries that can change:
+    // a title-only diff (the original) silently swallowed workspace moves,
+    // floating flips and column/row reshuffles, leaving IPC clients stale.
     func broadcastWindowDiff() {
-        var seen: [UInt64: String] = [:]
+        var seen: [UInt64: WindowBroadcastSnapshot] = [:]
         for ws in workspaces {
-            for column in ws.columns {
-                for w in column.windows { seen[w.id] = w.title }
+            for (ci, column) in ws.columns.enumerated() {
+                for (ri, w) in column.windows.enumerated() {
+                    seen[w.id] = WindowBroadcastSnapshot(
+                        title: w.title, workspaceId: ws.id, floating: false, column: ci, row: ri)
+                }
             }
-            for w in ws.floatingWindows { seen[w.id] = w.title }
+            for w in ws.floatingWindows {
+                seen[w.id] = WindowBroadcastSnapshot(
+                    title: w.title, workspaceId: ws.id, floating: true, column: nil, row: nil)
+            }
         }
-        for (id, title) in seen where lastBroadcastWindows[id] != title {
+        let diff = WindowBroadcastDiff.changes(old: lastBroadcastWindows, new: seen)
+        for id in diff.changed {
             if let w = windowWithID(id) { emitWindowChanged(w) }
         }
-        for id in lastBroadcastWindows.keys where seen[id] == nil {
-            emitWindowClosed(id)
-        }
+        for id in diff.closed { emitWindowClosed(id) }
         lastBroadcastWindows = seen
+        broadcastWorkspaceActiveWindowDiff()
+    }
+
+    // Which window a workspace considers active - its own focus state, valid
+    // even while the workspace is not the active one (niri tracks the same).
+    func activeWindowId(of ws: Workspace) -> UInt64? {
+        guard ws.columns.indices.contains(ws.focusedIndex) else {
+            return ws.floatingWindows.first?.id
+        }
+        return ws.columns[ws.focusedIndex].focusedWindow?.id
+    }
+
+    // niri's WorkspaceActiveWindowChanged: emitted whenever a workspace's
+    // active window changes, including workspaces that are not focused.
+    func broadcastWorkspaceActiveWindowDiff() {
+        var current: [UInt64: UInt64] = [:]
+        for ws in workspaces {
+            if let id = activeWindowId(of: ws) { current[ws.id] = id }
+        }
+        for ws in workspaces {
+            let previous = lastBroadcastActiveWindows[ws.id]
+            let now = current[ws.id]
+            if previous != now {
+                msgServer.broadcast(
+                    jsonLine([
+                        "WorkspaceActiveWindowChanged": [
+                            "workspace_id": Int(ws.id),
+                            "active_window_id": now.map(Int.init) as Any,
+                        ]
+                    ]))
+            }
+        }
+        lastBroadcastActiveWindows = current
     }
 
     func windowWithID(_ id: UInt64) -> ManagedWindow? {
@@ -406,32 +447,60 @@ extension TilingEngine {
     // subscriber (MsgServer.onSubscribe) so a client is fully populated before
     // the first live change and never has to poll a separate snapshot - the
     // way niri seeds its own event stream.
-    func currentStateLines() -> [String] {
-        var lines: [String] = []
-        lines.append(jsonLine(["WorkspacesChanged": ["workspaces": niriWorkspaces()]]))
+    // Every window as a niri Window entry, in workspace/column order.
+    func allNiriWindows() -> [[String: Any]] {
+        var entries: [[String: Any]] = []
         for ws in workspaces {
             for (ci, column) in ws.columns.enumerated() {
                 for (ri, w) in column.windows.enumerated() {
-                    lines.append(
-                        jsonLine([
-                            "WindowOpenedOrChanged": [
-                                "window": niriWindow(w, workspace: ws, column: ci, row: ri, floating: false)
-                            ]
-                        ]))
+                    entries.append(niriWindow(w, workspace: ws, column: ci, row: ri, floating: false))
                 }
             }
             for w in ws.floatingWindows {
-                lines.append(
-                    jsonLine([
-                        "WindowOpenedOrChanged": [
-                            "window": niriWindow(w, workspace: ws, column: nil, row: nil, floating: true)
-                        ]
-                    ]))
+                entries.append(niriWindow(w, workspace: ws, column: nil, row: nil, floating: true))
             }
         }
+        return entries
+    }
+
+    func currentStateLines() -> [String] {
+        var lines: [String] = []
+        lines.append(jsonLine(["WorkspacesChanged": ["workspaces": niriWorkspaces()]]))
+        // niri seeds a new subscriber with ONE bulk WindowsChanged, not a
+        // window-by-window replay - the bulk is also the only sane way for a
+        // client to drop windows that vanished while it was disconnected.
+        lines.append(jsonLine(["WindowsChanged": ["windows": allNiriWindows()]]))
         lines.append(
             jsonLine(["WindowFocusChanged": ["id": focusedManagedWindow().map { Int($0.id) } as Any]]))
         lines.append(jsonLine(["OverviewOpenedOrClosed": ["is_open": isOverviewActive]]))
         return lines
+    }
+}
+
+// The per-window broadcast state: everything niri's Window event carries
+// that can change. Pure and Equatable so the diff below is selftestable.
+struct WindowBroadcastSnapshot: Equatable {
+    let title: String
+    let workspaceId: UInt64
+    let floating: Bool
+    let column: Int?
+    let row: Int?
+}
+
+enum WindowBroadcastDiff {
+    // Which windows need a WindowOpenedOrChanged (new or any field changed)
+    // and which need a WindowClosed (gone).
+    static func changes(
+        old: [UInt64: WindowBroadcastSnapshot], new: [UInt64: WindowBroadcastSnapshot]
+    ) -> (changed: [UInt64], closed: [UInt64]) {
+        var changed: [UInt64] = []
+        for (id, snapshot) in new where old[id] != snapshot {
+            changed.append(id)
+        }
+        var closed: [UInt64] = []
+        for id in old.keys where new[id] == nil {
+            closed.append(id)
+        }
+        return (changed.sorted(), closed.sorted())
     }
 }

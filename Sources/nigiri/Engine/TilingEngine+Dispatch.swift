@@ -303,6 +303,15 @@ extension TilingEngine {
             exit(0)
         default: print("[action] unknown: \(line)")
         }
+
+        // niri emits its window events the moment the state mutates. The
+        // diff otherwise only runs at the tail of a full relayout, and many
+        // actions animate through reflow without one - a moved column's
+        // WindowOpenedOrChanged then waited for the NEXT unrelated relayout
+        // (sometimes seconds late, or never on a quiet desktop). The diff is
+        // a pure model walk - no AX reads - so running it after every action
+        // is cheap, and a no-change action broadcasts nothing.
+        broadcastWindowDiff()
     }
 
     // Applies a loaded config: layout knobs, ring style, rules, and a full
