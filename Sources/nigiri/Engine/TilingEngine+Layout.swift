@@ -27,6 +27,10 @@ extension TilingEngine {
 
     func collectCurrentAXWindows() -> [(AXUIElement, pid_t, String, CollectedKind)] {
         var result: [(AXUIElement, pid_t, String, CollectedKind)] = []
+        // Windows sitting above the normal level (a shell's status bar, panels,
+        // HUDs) are layer surfaces, not toplevels: never adopt them. Read once
+        // per pass and grouped by pid, so an app with no panel pays nothing.
+        let elevatedByPid = WindowStacking.elevatedFramesByPid()
         for app in NSWorkspace.shared.runningApplications {
             // Every rejection is logged under NIGIRI_DEBUG: "my window didn't
             // get tiled" is otherwise a silent, unattributable dead end -
@@ -89,7 +93,20 @@ extension TilingEngine {
                 continue
             }
             watcher.watch(pid: app.processIdentifier)
+            let elevated = elevatedByPid[app.processIdentifier] ?? []
             for w in axWindows {
+                // A window this app draws above the normal window level is a
+                // panel / layer surface - a shell's status bar, a HUD - not a
+                // toplevel. Tiling it steals a column and wraps a bar in a
+                // focus ring; skip it the way a Wayland compositor never sees
+                // a layer surface as a toplevel. Only paid for apps that own
+                // an elevated window at all (see elevatedByPid).
+                if !elevated.isEmpty, let f = WindowMover.currentFrame(w),
+                    elevated.contains(where: { ColumnLayoutEngine.isClose($0, f, tolerance: 2) })
+                {
+                    debugLog("[collect] skip \(name) window: above normal level (panel/layer surface)")
+                    continue
+                }
                 if isAccessory, !Self.dialogLikeAccessoryWindow(w) {
                     debugLog("[collect] skip accessory window of \(name): doesn't look like a dialog")
                     continue
