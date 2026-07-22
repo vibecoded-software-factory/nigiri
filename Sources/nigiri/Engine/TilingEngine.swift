@@ -476,8 +476,8 @@ final class TilingEngine {
     // reserved struts). The no-argument form above is the focused output, which
     // is what every existing single-output caller wants.
     func usableScreen(for output: Output) -> (frame: CGRect, usableWidth: CGFloat) {
-        let full = ScreenGeometry.visibleFrameInAXSpace(for: output.screen)
-        let frame = ScreenStruts.inset(full, by: Array(reservedStruts.values))
+        let frame = ScreenGeometry.workingAreaInAXSpace(
+            for: output.screen, reserved: Array(reservedStruts.values))
         return (frame, frame.width - 2 * ColumnLayoutEngine.gap)
     }
 

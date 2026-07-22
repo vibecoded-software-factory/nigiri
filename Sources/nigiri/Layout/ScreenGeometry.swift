@@ -70,6 +70,47 @@ enum ScreenGeometry {
         return result
     }
 
+    // The working area for LAYOUT: the screen frame minus, per edge, the LARGER
+    // of the system inset (menu bar / notch strip, Dock) and the IPC-reserved
+    // struts on that edge - then minus the config struts, which stack (niri
+    // semantics: layout { struts } is extra breathing room on top of panels).
+    //
+    // max(), not sum, for the reservations: an edge reservation is measured
+    // from the PHYSICAL screen edge, exactly like a layer-shell exclusive
+    // zone. A panel that reserves the top strip also covers the system's
+    // menu-bar strip (levels above normal may occupy it), so stacking the two
+    // insets would double-count and open a dead gap between the panel and the
+    // first window. When nothing reserves an edge the system inset still wins,
+    // so windows never land under the strip the WindowServer refuses them.
+    static func workingAreaInAXSpace(for screen: NSScreen?, reserved: [ScreenStrut]) -> CGRect {
+        guard let primary = NSScreen.screens.first else { return .zero }
+        let target = screen ?? primary
+
+        func flip(_ rect: CGRect) -> CGRect {
+            CGRect(
+                x: rect.origin.x, y: primary.frame.height - rect.origin.y - rect.height,
+                width: rect.width, height: rect.height)
+        }
+        let raw = flip(target.frame)
+        let visible = flip(target.visibleFrame)
+
+        let system = EdgeInsets(
+            top: visible.minY - raw.minY,
+            bottom: raw.maxY - visible.maxY,
+            left: visible.minX - raw.minX,
+            right: raw.maxX - visible.maxX)
+        let inset = ScreenStruts.effectiveInsets(system: system, reserved: reserved)
+
+        let s = struts
+        var frame = CGRect(
+            x: raw.minX + inset.left + s.left, y: raw.minY + inset.top + s.top,
+            width: raw.width - inset.left - inset.right - s.left - s.right,
+            height: raw.height - inset.top - inset.bottom - s.top - s.bottom)
+        frame.size.width = max(1, frame.size.width)
+        frame.size.height = max(1, frame.size.height)
+        return frame
+    }
+
     // The inverse of the AX-space math above - NSWindow.setFrame wants
     // AppKit's bottom-left-origin space, so an overlay tracking an
     // AX-space managed-window frame needs this conversion before display.
