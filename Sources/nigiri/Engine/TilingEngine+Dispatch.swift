@@ -23,6 +23,14 @@ extension TilingEngine {
             return SizeChange.parse(String(parts[index]))
         }
         let intArg = parts.count > 1 ? Int(parts[1]) : nil
+        // A niri reference arg carried as `id=5` / `index=2` / `name=x` (see the
+        // Action decoder): pull the value for a given key out of the tokens.
+        func kvArg(_ key: String) -> String? {
+            let prefix = key + "="
+            return parts.dropFirst().first { $0.hasPrefix(prefix) }.map {
+                String($0.dropFirst(prefix.count))
+            }
+        }
         // While the panel overview is up, navigation actions drive the
         // selection ring live (niri's zoomed-out camera) and a few window
         // actions (close, ...) act on the selection in place. EVERY other
@@ -119,7 +127,16 @@ extension TilingEngine {
         case "move-column-to-monitor-up", "move-window-to-monitor-up": moveColumnToMonitor(.up)
         case "move-column-to-monitor-down", "move-window-to-monitor-down": moveColumnToMonitor(.down)
         case "focus-workspace":
-            if let n = intArg {
+            // niri's FocusWorkspace takes a reference by Id, Index or Name; a
+            // bar clicking a workspace sends the stable Id, which is NOT the
+            // 1-based position focusWorkspace expects, so resolve it.
+            if let ref = kvArg("id"), let id = UInt64(ref) {
+                focusWorkspace(byId: id)
+            } else if let ref = kvArg("index"), let n = Int(ref) {
+                focusWorkspace(n)
+            } else if let ref = kvArg("name"), let idx = workspaceIndex(named: ref) {
+                focusWorkspace(idx + 1)
+            } else if let n = intArg {
                 focusWorkspace(n)
             } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
                 focusWorkspace(idx + 1)

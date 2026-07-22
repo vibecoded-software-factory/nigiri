@@ -95,6 +95,12 @@ enum NiriProtocol {
                                 line += " \(s)"
                             } else if let b = v as? Bool {
                                 line += " \(kebab(k))=\(b)"
+                            } else if let ref = v as? [String: Any], let (rk, rv) = ref.first {
+                                // A niri reference arg ({Id: 5} / {Index: 2} /
+                                // {Name: "x"}), e.g. FocusWorkspace's - carry the
+                                // inner tag and value as key=value so the action
+                                // handler can resolve it (id=5, index=2, name=x).
+                                line += " \(kebab(rk))=\(rv)"
                             }
                         }
                     }
