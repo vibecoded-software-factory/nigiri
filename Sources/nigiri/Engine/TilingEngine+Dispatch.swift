@@ -152,15 +152,19 @@ extension TilingEngine {
         case "move-workspace-up": moveWorkspace(delta: -1)
         case "move-workspace-down": moveWorkspace(delta: 1)
         // Screen-edge reservation, the compositor side of niri's layer-shell
-        // exclusive zone: `reserve-zone <id> <edge> <size>` shrinks the tiling
-        // area, `clear-zone <id>` gives it back. Any client of this socket can
-        // ask; nigiri does not care which. A zero or malformed size clears, so
-        // a client dropping its reservation to 0 leaves no phantom strut.
+        // exclusive zone: `reserve-zone <id> <edge> <size> [pid]` shrinks the
+        // tiling area, `clear-zone <id>` gives it back. Any client of this
+        // socket can ask; nigiri does not care which. A zero or malformed size
+        // clears, so a client dropping its reservation to 0 leaves no phantom
+        // strut. The optional pid lets the reservation be dropped automatically
+        // when that process dies (see the didTerminate handler).
         case "reserve-zone":
             if parts.count >= 4, let edge = ScreenStrut.Edge(rawValue: String(parts[2])),
                 let size = Double(parts[3]), size > 0
             {
-                reservedStruts[String(parts[1])] = ScreenStrut(edge: edge, size: CGFloat(size))
+                let pid = parts.count >= 5 ? pid_t(parts[4]) : nil
+                reservedStruts[String(parts[1])] = ScreenStrut(
+                    edge: edge, size: CGFloat(size), ownerPid: pid)
             } else if parts.count >= 2 {
                 reservedStruts.removeValue(forKey: String(parts[1]))
             }
