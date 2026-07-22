@@ -2,10 +2,11 @@ import AppKit
 
 // Overview v2: a full-screen panel of window THUMBNAILS (ScreenCaptureKit
 // screenshots) - the real windows never move. One row per occupied
-// workspace; each thumbnail keeps its window's aspect
-// ratio and shows its title underneath. Click hit-testing is the mouse
-// tap's job (the panel itself is click-through like every overlay here) -
-// hitTest(_:) answers which entry a global point lands on.
+// workspace; each thumbnail keeps its window's aspect ratio, rendered bare
+// like niri's overview (no titles, no labels - niri draws none). Click
+// hit-testing is the mouse tap's job (the panel itself is click-through like
+// every overlay here) - hitTest(_:) answers which entry a global point lands
+// on.
 final class OverviewPanel {
     struct Entry {
         let title: String
@@ -442,11 +443,13 @@ final class OverviewPanel {
                 // whose real aspect differs from its tile - e.g. a wide window
                 // shown in a half-height STACKED slot - never letterboxes into
                 // big grey bars; it just crops.
-                let titleHeight: CGFloat = 18
+                // No title label: niri's overview renders the zoomed windows
+                // bare - no text on or under them (same verification as the
+                // workspace chip below). The label was ours, not a port.
                 let thumb = NSView(
                     frame: CGRect(
-                        x: 4, y: titleHeight, width: card.bounds.width - 8,
-                        height: card.bounds.height - titleHeight - 4))
+                        x: 4, y: 4, width: card.bounds.width - 8,
+                        height: card.bounds.height - 8))
                 thumb.wantsLayer = true
                 thumb.layer?.contentsGravity = .resizeAspectFill
                 thumb.layer?.masksToBounds = true
@@ -456,13 +459,6 @@ final class OverviewPanel {
                 thumbnailViews.append(thumb)
                 thumbnailsByWindow[entry.windowID] = thumb
                 cardViews.append(card)
-                let title = NSTextField(labelWithString: entry.title)
-                title.font = NSFont.systemFont(ofSize: 10)
-                title.textColor = NSColor(calibratedWhite: 0.8, alpha: 1)
-                title.alignment = .center
-                title.lineBreakMode = .byTruncatingTail
-                title.frame = CGRect(x: 4, y: 2, width: card.bounds.width - 8, height: 14)
-                card.addSubview(title)
                 strip.addSubview(card)
             }
 
