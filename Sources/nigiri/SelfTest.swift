@@ -657,6 +657,13 @@ enum SelfTest {
         expect(
             !TilingEngine.isDialogLike(title: "", hasDefaultButton: false, hasCancelButton: false),
             "a video wallpaper or one of our overlays - no title, no buttons - is not")
+        // The same rule keeps a shell panel/bar out of the layout: a client's
+        // borderless chrome reports subrole AXDialog with no title and no
+        // buttons, so it is NOT dialog-like and must not be tiled or given an
+        // inactive border (reported live: a reserved-zone panel wearing one).
+        expect(
+            !TilingEngine.isDialogLike(title: "", hasDefaultButton: false, hasCancelButton: false),
+            "a borderless panel/bar (dialog subrole, no title, no buttons) is not adopted")
 
         // REGRESSION (item 48): pulling a window out of the tiling cancels
         // fullscreen. fullscreenWindow and floatingWindows were two flags nobody
