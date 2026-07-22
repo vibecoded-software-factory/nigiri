@@ -192,14 +192,36 @@ extension TilingEngine {
                 let size = Double(parts[3]), size > 0
             {
                 let pid = parts.count >= 5 ? pid_t(parts[4]) : nil
+                // Clamp to half the relevant screen dimension: a runaway zone
+                // (a client bug) must never be able to swallow the whole
+                // layout. Half still covers any real bar/dock/sidebar.
+                let screen = ScreenGeometry.primaryScreenVisibleFrameInAXSpace()
+                let limit =
+                    (edge == .left || edge == .right) ? screen.width / 2 : screen.height / 2
+                let clamped = min(CGFloat(size), max(1, limit))
+                if pid == nil {
+                    print(
+                        "[strut] WARNING reserve \(parts[1]) has no owner pid: it will survive its client and only an explicit clear-zone removes it"
+                    )
+                }
+                if clamped != CGFloat(size) {
+                    print("[strut] reserve \(parts[1]) size \(Int(size)) clamped to \(Int(clamped))")
+                }
                 reservedStruts[String(parts[1])] = ScreenStrut(
-                    edge: edge, size: CGFloat(size), ownerPid: pid)
+                    edge: edge, size: clamped, ownerPid: pid)
+                print(
+                    "[strut] reserve \(parts[1]) \(edge.rawValue) \(Int(clamped)) pid=\(pid.map(String.init) ?? "-") (total: \(reservedStruts.count))"
+                )
             } else if parts.count >= 2 {
-                reservedStruts.removeValue(forKey: String(parts[1]))
+                if reservedStruts.removeValue(forKey: String(parts[1])) != nil {
+                    print("[strut] clear \(parts[1]) via zero/malformed reserve")
+                }
             }
             applyStrutChange()
         case "clear-zone":
-            if parts.count >= 2 { reservedStruts.removeValue(forKey: String(parts[1])) }
+            if parts.count >= 2, reservedStruts.removeValue(forKey: String(parts[1])) != nil {
+                print("[strut] clear \(parts[1]) (total: \(reservedStruts.count))")
+            }
             applyStrutChange()
         case "consume-or-expel-window-left", "consume-or-expel-left": consumeOrExpel(delta: -1)
         case "consume-or-expel-window-right", "consume-or-expel-right": consumeOrExpel(delta: 1)
