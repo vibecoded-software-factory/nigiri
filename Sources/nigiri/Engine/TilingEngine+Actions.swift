@@ -532,9 +532,15 @@ extension TilingEngine {
     // the app runs its normal close path (save prompts and all). A
     // chrome-less window has no button to press; AX offers no other
     // close verb and nigiri never synthesizes keyboard input, so that's an
-    // honest refusal, not a silent one.
-    func closeWindow() {
-        guard let w = focusedManagedWindow() else { return }
+    // honest refusal, not a silent one. niri's CloseWindow carries an
+    // optional id (a taskbar closes windows that are not focused); nil means
+    // the focused window, like niri.
+    func closeWindow(id: UInt64? = nil) {
+        let target = id.flatMap { windowWithID($0) } ?? focusedManagedWindow()
+        guard let w = target else {
+            if let id { print("close-window: no window \(id)") }
+            return
+        }
         guard let closeButton = AX.element(w.axElement, kAXCloseButtonAttribute as String) else {
             print("close-window: \(w.title) has no close button (chrome-less window)")
             return
