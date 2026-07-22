@@ -532,7 +532,11 @@ final class TilingEngine {
         for ws in workspaces {
             for column in ws.columns { column.cachedHeights = nil }
         }
-        relayout()
+        // Through the deferring scheduler, NOT a direct relayout: a strut
+        // change landing mid-workspace-transition used to relayout against a
+        // model that is deliberately mid-stash, folding windows into the
+        // wrong places and superseding the switch's animation.
+        scheduleRelayout()
     }
 
     // Frames of the windows floating ABOVE the tiled layer (dialogs,

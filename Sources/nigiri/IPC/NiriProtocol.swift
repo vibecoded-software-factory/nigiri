@@ -20,6 +20,10 @@ enum NiriProtocol {
         case focusedOutput
         case overviewState
         case pickWindow
+        // nigiri-only diagnostics: the live reservation table and the
+        // strut-adjusted usable frame - the state that silently shapes every
+        // layout and used to be unobservable from outside.
+        case struts
         case action(String)
         case eventStream
         case unknown(String)
@@ -40,6 +44,7 @@ enum NiriProtocol {
         case "workspaces": return Parsed(request: .workspaces, legacy: true)
         case "focused-window": return Parsed(request: .focusedWindow, legacy: true)
         case "event-stream": return Parsed(request: .eventStream, legacy: true)
+        case "struts": return Parsed(request: .struts, legacy: true)
         default: break
         }
         if trimmed.hasPrefix("action ") {
@@ -255,6 +260,22 @@ extension TilingEngine {
             return ok(["FocusedOutput": niriOutputs().first as Any], legacy: parsed.legacy)
         case .overviewState:
             return ok(["OverviewState": ["is_open": isOverviewActive]], legacy: parsed.legacy)
+        case .struts:
+            let usable = usableScreen().frame
+            let entries = reservedStruts.map { id, strut -> [String: Any] in
+                [
+                    "id": id, "edge": strut.edge.rawValue, "size": strut.size,
+                    "pid": strut.ownerPid.map(Int.init) as Any,
+                ]
+            }
+            return ok(
+                [
+                    "struts": entries,
+                    "usable": [
+                        "x": usable.origin.x, "y": usable.origin.y,
+                        "width": usable.width, "height": usable.height,
+                    ],
+                ], legacy: parsed.legacy)
         case .pickWindow:
             // niri blocks until the user clicks a window. Doing that here
             // would mean holding a socket open across an interactive pick;
