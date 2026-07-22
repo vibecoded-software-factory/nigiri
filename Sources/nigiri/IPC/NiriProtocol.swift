@@ -372,4 +372,39 @@ extension TilingEngine {
     func emitOverviewChanged(_ open: Bool) {
         msgServer.broadcast(jsonLine(["OverviewOpenedOrClosed": ["is_open": open]]))
     }
+
+    // The whole current state as a list of the same event lines a subscriber
+    // would have received to reach it: every workspace, every window, the
+    // focused window, the overview flag. Replayed once to each new event-stream
+    // subscriber (MsgServer.onSubscribe) so a client is fully populated before
+    // the first live change and never has to poll a separate snapshot - the
+    // way niri seeds its own event stream.
+    func currentStateLines() -> [String] {
+        var lines: [String] = []
+        lines.append(jsonLine(["WorkspacesChanged": ["workspaces": niriWorkspaces()]]))
+        for ws in workspaces {
+            for (ci, column) in ws.columns.enumerated() {
+                for (ri, w) in column.windows.enumerated() {
+                    lines.append(
+                        jsonLine([
+                            "WindowOpenedOrChanged": [
+                                "window": niriWindow(w, workspace: ws, column: ci, row: ri, floating: false)
+                            ]
+                        ]))
+                }
+            }
+            for w in ws.floatingWindows {
+                lines.append(
+                    jsonLine([
+                        "WindowOpenedOrChanged": [
+                            "window": niriWindow(w, workspace: ws, column: nil, row: nil, floating: true)
+                        ]
+                    ]))
+            }
+        }
+        lines.append(
+            jsonLine(["WindowFocusChanged": ["id": focusedManagedWindow().map { Int($0.id) } as Any]]))
+        lines.append(jsonLine(["OverviewOpenedOrClosed": ["is_open": isOverviewActive]]))
+        return lines
+    }
 }

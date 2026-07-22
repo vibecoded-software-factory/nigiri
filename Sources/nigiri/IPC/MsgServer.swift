@@ -14,6 +14,11 @@ final class MsgServer {
     private var connectionSources: [Int32: DispatchSourceRead] = [:]
     private var streamFDs: Set<Int32> = []
     var onRequest: ((String) -> String)?
+    // The current-state event lines to replay to a just-subscribed client, so
+    // the event stream is self-sufficient: a subscriber sees the world as it is
+    // now, then every change - it never has to also poll a snapshot. niri does
+    // the same on subscribe.
+    var onSubscribe: (() -> [String])?
 
     nonisolated static func makeAddress() -> sockaddr_un {
         var address = sockaddr_un()
@@ -89,6 +94,9 @@ final class MsgServer {
                 if request == "event-stream" {
                     self.streamFDs.insert(connection)
                     self.send(connection, "{\"event\":\"subscribed\"}")
+                    // Replay the current state to this one subscriber before it
+                    // starts receiving live changes.
+                    for line in self.onSubscribe?() ?? [] { self.send(connection, line) }
                     // the read source stays alive: its EOF is how we learn the
                     // subscriber went away
                 } else {
