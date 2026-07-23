@@ -88,6 +88,15 @@ extension TilingEngine {
         case "focus-window-down-or-top": focusWindowWrapping(delta: 1)
         case "focus-window-up-or-bottom": focusWindowWrapping(delta: -1)
         case "focus-window-previous": focusWindowPrevious()
+        case "focus-window":
+            // niri's FocusWindow { id } (niri-ipc/src/lib.rs). It used to
+            // land on unknown-action - only the by-id spelling below
+            // existed - so niri clients could not focus a window by id.
+            if let id = kvArg("id").flatMap({ UInt64($0) }) {
+                focusWindowByID(id)
+            } else {
+                print("[action] focus-window needs id=<window id>")
+            }
         case "focus-window-by-id":
             if parts.count > 1, let id = UInt64(parts[1]) { focusWindowByID(id) }
         case "focus-floating": focusLayer(floating: true)

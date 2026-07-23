@@ -106,7 +106,15 @@ final class MsgServer {
                 // stream; anything else is a one-shot request.
                 if request == "event-stream" || request == "\"EventStream\"" {
                     self.streamFDs.insert(connection)
-                    self.send(connection, "{\"event\":\"subscribed\"}")
+                    // niri answers an EventStream request with {"Ok":"Handled"}
+                    // before the events begin (src/ipc/server.rs) - a strict
+                    // niri client chokes on anything else as its first line.
+                    // The legacy text form keeps its old ack so existing
+                    // subscribers' expectations hold.
+                    self.send(
+                        connection,
+                        request == "event-stream"
+                            ? "{\"event\":\"subscribed\"}" : "{\"Ok\":\"Handled\"}")
                     // Replay the current state to this one subscriber before it
                     // starts receiving live changes.
                     for line in self.onSubscribe?() ?? [] { self.send(connection, line) }
