@@ -41,11 +41,10 @@ extension TilingEngine {
         let gap = ColumnLayoutEngine.gap
         switch position {
         case .newColumn(let index):
-            // A column-shaped slab, the width the new column would get,
-            // centred on the gap it would open.
-            let width = ColumnLayoutEngine.width(
-                forProportion: ColumnLayoutEngine.defaultColumnWidth,
-                usableWidth: usableWidth)
+            // niri's insert hint slab is a FIXED 300px wide (scrolling.rs:
+            // 2436), not the would-be column width - the hint marks the
+            // slot, it does not preview the size.
+            let width: CGFloat = 300
             let x: CGFloat
             if index < frames.count, let first = frames[index].first {
                 x = first.minX - gap / 2 - width / 2
@@ -63,11 +62,9 @@ extension TilingEngine {
         case .inColumn(let columnIndex, let row):
             let columnFrames = frames[columnIndex]
             guard let reference = columnFrames.first else { return nil }
-            // A band the height one tile would take once the stack grows by
-            // one, at the slot it would occupy.
-            let count = columnFrames.count + 1
-            let total = (columnFrames.last?.maxY ?? reference.maxY) - reference.minY
-            let height = max(40, (total - CGFloat(count - 1) * gap) / CGFloat(count))
+            // niri's in-column band is a FIXED 150px tall (scrolling.rs:
+            // 2436-2516), not a computed tile share.
+            let height: CGFloat = 150
             let y: CGFloat
             if row < columnFrames.count {
                 y = columnFrames[row].minY - gap / 2 - height / 2

@@ -623,8 +623,19 @@ extension NigiriConfig {
                 case "width": if let v = Double(parts.last ?? "") { config.borderWidth = CGFloat(v) }
                 case "inactive-color":
                     if let c = parseColor(parts.last ?? "") { config.borderInactiveColor = c }
-                case "active-color", "active-gradient":
-                    print("[config] border: the ACTIVE window wears the focus-ring - configure that instead")
+                case "active-color":
+                    // niri: with border enabled the focused window wears the
+                    // border in active-color IN ADDITION to its focus ring.
+                    if let c = parseColor(parts.last ?? "") { config.borderActiveColor = c }
+                case "active-gradient":
+                    // The border stroke is single-color here; the gradient's
+                    // `from` stop is the closest honest approximation.
+                    if let from = keyValues(parts).first(where: { $0.0 == "from" }),
+                        let c = parseColor(from.1)
+                    {
+                        config.borderActiveColor = c
+                        print("[config] border active-gradient: approximated by its `from` stop")
+                    }
                 default: print("[config] unknown border key: \(parts[0])")
                 }
             }

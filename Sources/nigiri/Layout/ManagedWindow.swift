@@ -126,6 +126,9 @@ final class ManagedWindow {
     // restore anyway, but floating windows have no other record of where
     // they belong.
     var stashedFrame: CGRect? = nil
+    // Set at adoption, consumed by the first frame animation: that first
+    // flight plays niri's window-open channel instead of window-movement.
+    var openAnimationPending = false
     // Which preset this FLOATING window is currently sitting on, so
     // switch-preset-window-width cycles the list in order (niri's
     // preset_width_idx). Tiled windows use Column.presetWidthIndex.

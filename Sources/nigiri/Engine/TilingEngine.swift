@@ -270,6 +270,9 @@ final class TilingEngine {
     var hotCornerBottomLeft = false
     var hotCornerBottomRight = false
     var pointerInsideHotCorner = false
+    // Whether layout { border } is enabled: only then does the FOCUSED
+    // window wear the active-color border under its ring, like niri's.
+    var borderActiveEnabled = false
     var hotCornerTimer: Timer?
     // The config's animations section (see animationCurve(named:)).
     var configuredAnimations: [String: AnimationCurve] = [:]
@@ -685,10 +688,16 @@ final class TilingEngine {
         let focused = focusedManagedWindow()
         let screenFrame = usableScreen().frame
         let stacking = WindowStacking.onScreen()
+        // niri: with border enabled the focused window wears the border in
+        // active-color too, under its ring (tile.rs draws both).
+        let activeFrame =
+            borderActiveEnabled
+            ? focused.flatMap { WindowMover.currentFrame($0.axElement) } : nil
         borders.update(
             frames: Self.decoratedFrames(
                 decorationCandidates(excluding: focused.map { [$0] } ?? [], stacking: stacking),
-                occluders: stacking, screen: screenFrame))
+                occluders: stacking, screen: screenFrame),
+            active: activeFrame)
     }
 
     // Tab indicators for every visible tabbed column, refreshed with the

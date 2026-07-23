@@ -174,6 +174,10 @@ struct NigiriConfig {
     var borderWidth: CGFloat = 0
     var borderInactiveColor: NSColor = NSColor(
         calibratedRed: 0x58 / 255.0, green: 0x5B / 255.0, blue: 0x70 / 255.0, alpha: 1)
+    // niri's border.active-color default: rgb(255,200,127) (appearance.rs).
+    // With border enabled the FOCUSED window wears it too, under its ring.
+    var borderActiveColor: NSColor = NSColor(
+        calibratedRed: 255 / 255.0, green: 200 / 255.0, blue: 127 / 255.0, alpha: 1)
     // niri's input section, the parts with an AX-world equivalent.
     var focusFollowsMouse: Bool = false
     var warpMouseToFocus: Bool = false

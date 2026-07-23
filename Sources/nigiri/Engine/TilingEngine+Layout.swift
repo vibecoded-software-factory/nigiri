@@ -637,6 +637,9 @@ extension TilingEngine {
             let rule = matchingWindowRule(appName: appName, bundleID: app?.bundleIdentifier, title: title)
             let window = ManagedWindow(axElement: element, pid: pid, title: title)
             window.isDialog = kind == .dialog
+            // The first flight plays niri's window-open channel (see
+            // animateFrames); cataloguing an existing session is not an open.
+            window.openAnimationPending = !isInitialAdoption
             // A non-settable size is the AX analogue of min == max: niri
             // clamps that tile's column to exactly this size (see
             // ManagedWindow.fixedSize). Probed at adoption because a rule

@@ -1234,8 +1234,17 @@ extension TilingEngine {
         // new column is what anyone would expect - measured a horizontal
         // distance of 0 against the last column and stacked into it instead.
         // insertPosition, the tiled twin of this contest, has both bounds.
+        // niri's insert hint is a FILLED slab, not a thin bar
+        // (scrolling.rs:2436-2516): 300px wide for a new column, 150px tall
+        // for an in-column slot - scaled by the overview zoom here, since
+        // the rows are drawn zoomed out.
+        let zoom = min(0.75, max(0.0001, OverviewPanel.zoom))
+        let slabWidth = 300 * zoom
+        let bandHeight = 150 * zoom
         guard let colIdx = TilingEngine.hoveredColumn(colBox, x: point.x) else {
-            let hint = CGRect(x: colGapX.last! - 7, y: rowMinY, width: 14, height: rowMaxY - rowMinY)
+            let hint = CGRect(
+                x: colGapX.last! - slabWidth / 2, y: rowMinY,
+                width: slabWidth, height: rowMaxY - rowMinY)
             let anchor = overviewSelection[cols[cols.count - 1][0]].window
             return (.newColumn(anchor: anchor, after: true), hint)
         }
@@ -1248,22 +1257,21 @@ extension TilingEngine {
         })!
         let horDist = abs(tileY - point.y)
 
-        // Slim insertion bars: full-length along the gap so you see WHERE,
-        // thin across so they don't swamp the thumbnails.
-        let thickness: CGFloat = 14
         if vertDist <= horDist {
-            // New column: a tall thin bar at the column gap, full row height.
+            // New column: niri's 300px slab at the column gap, full row
+            // height.
             let hint = CGRect(
-                x: gapX - thickness / 2, y: rowMinY, width: thickness, height: rowMaxY - rowMinY)
+                x: gapX - slabWidth / 2, y: rowMinY, width: slabWidth, height: rowMaxY - rowMinY)
             let anchor =
                 gapIdx < cols.count
                 ? overviewSelection[cols[gapIdx][0]].window
                 : overviewSelection[cols[cols.count - 1][0]].window
             return (.newColumn(anchor: anchor, after: gapIdx >= cols.count), hint)
         } else {
-            // Stack: a wide thin bar across the column at the tile gap.
+            // Stack: niri's 150px band across the column at the tile gap.
             let cb = colBox[colIdx]
-            let hint = CGRect(x: cb.minX, y: tileY - thickness / 2, width: cb.width, height: thickness)
+            let hint = CGRect(
+                x: cb.minX, y: tileY - bandHeight / 2, width: cb.width, height: bandHeight)
             let anchor =
                 tileIdx == 0
                 ? overviewSelection[cols[colIdx][0]].window

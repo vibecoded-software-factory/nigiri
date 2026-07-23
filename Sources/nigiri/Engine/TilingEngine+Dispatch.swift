@@ -409,9 +409,13 @@ extension TilingEngine {
         // window bare. The overlay is now driven by whichever decoration is
         // actually configured, ring first.
         if config.borderWidth > 0 {
-            borders.applyStyle(width: config.borderWidth, color: config.borderInactiveColor)
+            borders.applyStyle(
+                width: config.borderWidth, color: config.borderInactiveColor,
+                activeColor: config.borderActiveColor)
+            borderActiveEnabled = true
         } else if !config.ringOff {
             borders.applyStyle(width: config.ringWidth, color: config.ringInactiveColor)
+            borderActiveEnabled = false
         } else {
             borders.applyStyle(width: 0, color: config.borderInactiveColor)
         }

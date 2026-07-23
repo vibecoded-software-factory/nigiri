@@ -112,16 +112,16 @@ out at phantom sizes (PR #35).
 - [x] 26. INVENTED: overview plain wheel pans the hovered row; niri maps
   unmodified wheel to FocusWorkspaceUp/DownUnderMouse (workspace switching)
   (TilingEngine+Overview.swift:806 vs input/mod.rs:3206).
-- [ ] 27. DIVERGENT: overview insert hint drawn as 14px bars; niri renders a
+- [x] 27. DIVERGENT: overview insert hint drawn as 14px bars; niri renders a
   filled 300px slab / 150px band (the non-overview drag hint is closer but
   uses computed sizes instead of niri's constants).
 - [x] 28. DIVERGENT IPC shapes: Version is an object (niri: string), Outputs an
   array (niri: map by name) with missing fields + invented `is_focused`;
   Workspace missing `is_urgent`; `active_window_id` only on the active one.
-- [ ] 29. MISSING: `window-open` animation parsed but never played; every frame
+- [x] 29. MISSING: `window-open` animation parsed but never played; every frame
   animation runs as window-movement so `window-resize` config is dead (niri
   has a distinct resize crossfade).
-- [ ] 30. MISSING: with `border` enabled niri draws on EVERY window (active/
+- [x] 30. MISSING: with `border` enabled niri draws on EVERY window (active/
   inactive/urgent, gradients); nigiri strokes non-focused only, single color.
 - [ ] 31. DIVERGENT: new floating windows keep macOS placement; niri centers
   them (floating.rs:449). Re-floated windows: niri restores the stored float
