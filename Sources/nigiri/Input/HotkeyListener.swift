@@ -1,3 +1,4 @@
+import AppKit
 import Carbon
 import Foundation
 
@@ -29,6 +30,13 @@ final class HotkeyListener {
     private static var nextSignature: OSType = 0x4e494700  // 'NIG\0' base
     private let signature: OSType
     private var actions: [UInt32: () -> Void] = [:]
+    // Which of our ids re-fire while held (the bind's `repeat`, niri's
+    // default). Carbon only delivers ONE Pressed per physical press, so
+    // repeating is driven by our own timer between Pressed and Released,
+    // paced by the user's system key-repeat settings - the same knobs
+    // niri reads from libinput.
+    private var repeatingIDs: Set<UInt32> = []
+    private var repeatTimers: [UInt32: Timer] = [:]
     private var hotKeyRefs: [EventHotKeyRef] = []
     private var nextID: UInt32 = 1
     private var eventHandler: EventHandlerRef?
@@ -43,9 +51,13 @@ final class HotkeyListener {
     // rather than silently stealing it) - callers should pick a different
     // combo rather than ignore this.
     @discardableResult
-    func register(_ keyCode: CGKeyCode, modifiers: Modifiers, action: @escaping () -> Void) -> Bool {
+    func register(
+        _ keyCode: CGKeyCode, modifiers: Modifiers, repeats: Bool = false,
+        action: @escaping () -> Void
+    ) -> Bool {
         let id = nextID
         nextID += 1
+        if repeats { repeatingIDs.insert(id) }
         let hotKeyID = EventHotKeyID(signature: signature, id: id)
         var hotKeyRef: EventHotKeyRef?
         // options: 0, not kEventHotKeyExclusive - matches Magnet
@@ -75,6 +87,33 @@ final class HotkeyListener {
         for ref in hotKeyRefs { UnregisterEventHotKey(ref) }
         hotKeyRefs = []
         actions = [:]
+        repeatingIDs = []
+        cancelAllRepeats()
+    }
+
+    private func cancelAllRepeats() {
+        for (_, timer) in repeatTimers { timer.invalidate() }
+        repeatTimers = [:]
+    }
+
+    // Pressed: fire, and after the system's initial delay re-fire at the
+    // system rate until Released. NSEvent surfaces the user's Keyboard
+    // settings, so a slow typist's delay is honoured exactly like a fast one.
+    fileprivate func beginRepeat(id: UInt32) {
+        guard repeatingIDs.contains(id), let action = actions[id] else { return }
+        repeatTimers[id]?.invalidate()
+        let interval = max(0.02, NSEvent.keyRepeatInterval)
+        let delay = max(0.1, NSEvent.keyRepeatDelay)
+        let timer = Timer(fire: Date().addingTimeInterval(delay), interval: interval, repeats: true) {
+            _ in
+            MainActor.assumeIsolated { action() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        repeatTimers[id] = timer
+    }
+
+    fileprivate func endRepeat(id: UInt32) {
+        repeatTimers.removeValue(forKey: id)?.invalidate()
     }
 
     func start() -> Bool {
@@ -83,8 +122,12 @@ final class HotkeyListener {
         // previous one - a leaked handler, permanently installed on the
         // shared dispatcher target, per overview open.
         guard eventHandler == nil else { return true }
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventTypes = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let status = InstallEventHandler(
             GetEventDispatcherTarget(),
@@ -110,6 +153,7 @@ final class HotkeyListener {
                 // action closure to be Sendable.
                 let id = hotKeyID.id
                 let sig = hotKeyID.signature
+                let kind = GetEventKind(event)
                 return MainActor.assumeIsolated {
                     let listener = Unmanaged<HotkeyListener>.fromOpaque(userData).takeUnretainedValue()
                     // Only OUR own hotkeys - every listener's handler sees
@@ -118,11 +162,16 @@ final class HotkeyListener {
                     guard sig == listener.signature, let action = listener.actions[id] else {
                         return OSStatus(eventNotHandledErr)
                     }
+                    if kind == UInt32(kEventHotKeyReleased) {
+                        listener.endRepeat(id: id)
+                        return noErr
+                    }
                     action()
+                    listener.beginRepeat(id: id)
                     return noErr
                 }
             },
-            1, &eventType, selfPtr, &eventHandler
+            eventTypes.count, &eventTypes, selfPtr, &eventHandler
         )
         return status == noErr
     }

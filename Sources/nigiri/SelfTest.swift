@@ -313,6 +313,19 @@ enum SelfTest {
             "Hyper is all four")
         expect(NigiriConfig.parseCombo("Garbage+A") == nil, "a nonexistent modifier is rejected")
 
+        // niri's bind `repeat` (binds.rs): default true, opt-out per bind.
+        let repeatConfig = NigiriConfig.parse(
+            """
+            binds {
+                Mod+A { focus-column-left; }
+                Mod+B repeat=false { focus-column-right; }
+            }
+            """)
+        expect(repeatConfig.binds.first?.repeats == true, "binds repeat by default, like niri")
+        expect(
+            repeatConfig.binds.last?.repeats == false,
+            "repeat=false opts a bind out of held-key re-fire")
+
         // --- spawns, gestures blocks, hot corners --------------------------
         // niri's spawn-at-startup is argv (misc.rs): quoting must survive,
         // and an unknown BLOCK inside gestures{} must be skipped as a block

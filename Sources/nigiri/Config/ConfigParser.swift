@@ -941,7 +941,8 @@ extension NigiriConfig {
                     // overlay listed the literal word "null" as the title.
                     case "hotkey-overlay-title":
                         if kv[1] == "null" { bind.hiddenFromOverlay = true } else { bind.title = kv[1] }
-                    default: break  // repeat / allow-when-locked / allow-inhibiting: inert on macOS
+                    case "repeat": bind.repeats = (kv[1] == "true")
+                    default: break  // allow-when-locked / allow-inhibiting: inert on macOS
                     }
                 }
                 config.binds.append(bind)

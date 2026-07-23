@@ -56,7 +56,7 @@ out at phantom sizes (PR #35).
   `gestures { hot-corners {} }` corrupts section parsing (ConfigParser.swift:661).
 - [x] 10. MISSING: hot corners. niri opens the overview from the top-left
   corner even on an all-default config (niri.rs:3070). No code at all.
-- [ ] 11. MISSING: bind `repeat` is parsed but inert; niri re-fires held keys
+- [x] 11. MISSING: bind `repeat` is parsed but inert; niri re-fires held keys
   by default. Held-key navigation repeats on niri, not on nigiri.
 - [ ] 12. INVENTED: `toggle-window-floating` refuses to tile dialogs
   (Actions.swift:887); niri moves any window either way. The refusal-demotion
