@@ -46,15 +46,15 @@ out at phantom sizes (PR #35).
 
 ## P1 - parity violations users feel
 
-- [ ] 8. INVENTED: `spawn-at-startup` runs through /bin/sh; niri's is argv
+- [x] 8. INVENTED: `spawn-at-startup` runs through /bin/sh; niri's is argv
   (spawn-sh-at-startup is the shell one, unparsed here). Quoting collapses:
   `"Google Chrome"` becomes two words. Linux-only spawns then fail noisily
   inside sh with no detection (ConfigParser.swift:914, TilingEngine.swift:1058).
-- [ ] 9. INVENTED: the whole `gestures {}` vocabulary (three-finger-*, mouse-*)
+- [x] 9. INVENTED: the whole `gestures {}` vocabulary (three-finger-*, mouse-*)
   does not exist in niri (its children: dnd-edge-*, hot-corners), and unknown
   BLOCKS inside gestures{}/window-rule{} are not skipped, so niri's real
   `gestures { hot-corners {} }` corrupts section parsing (ConfigParser.swift:661).
-- [ ] 10. MISSING: hot corners. niri opens the overview from the top-left
+- [x] 10. MISSING: hot corners. niri opens the overview from the top-left
   corner even on an all-default config (niri.rs:3070). No code at all.
 - [ ] 11. MISSING: bind `repeat` is parsed but inert; niri re-fires held keys
   by default. Held-key navigation repeats on niri, not on nigiri.
@@ -153,3 +153,10 @@ out at phantom sizes (PR #35).
   clear-zone stay: documented macOS substitutes).
 - [ ] 40. Tab indicator: honor config (position, gaps-between-tabs,
   corner-radius, colors derived from focus-ring, urgent) instead of constants.
+- [ ] 41. ConfigWatcher only watches config.kdl: editing an INCLUDED file
+  (gestures.kdl, dms/windowrules.kdl) does not trigger the live reload -
+  found while live-testing hot corners. niri watches the whole config set.
+- [ ] 42. The invented gestures{} keys (three-finger-*, mouse-*) are kept as
+  a documented nigiri extension (Magic Mouse has no niri counterpart), but
+  they live inside niri's OWN config namespace, which real niri rejects -
+  they need a nigiri-specific home (separate file or env-gated include).

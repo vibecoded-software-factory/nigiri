@@ -658,10 +658,45 @@ extension NigiriConfig {
             }
         }
 
+        // niri's gestures.hot_corners (niri-config/gestures.rs, HotCorners):
+        // bare boolean children. When no corner is set explicitly, top-left
+        // is the default (niri.rs, is_inside_hot_corner).
+        func parseHotCorners() {
+            while let t = advance() {
+                if t == "\n" || t == ";" { continue }
+                if t == "}" { return }
+                switch t {
+                case "off": config.hotCornersOff = true
+                case "top-left": config.hotCornerTopLeft = true
+                case "top-right": config.hotCornerTopRight = true
+                case "bottom-left": config.hotCornerBottomLeft = true
+                case "bottom-right": config.hotCornerBottomRight = true
+                default: print("[config] unknown hot-corners key: \(t)")
+                }
+            }
+        }
+
         func parseGestures() {
             while let t = advance() {
                 if t == "\n" || t == ";" { continue }
                 if t == "}" { return }
+                // Block children first: niri's real gestures section is made
+                // of them (hot-corners, dnd-edge-*), and an unskipped unknown
+                // block used to be consumed as statements - corrupting the
+                // parse of everything after it in a genuine niri config.
+                if next() == "{" {
+                    i += 1
+                    switch t {
+                    case "hot-corners": parseHotCorners()
+                    case "dnd-edge-view-scroll", "dnd-edge-workspace-switch":
+                        // Real niri children (gestures.rs); drag-and-drop
+                        // edge scrolling has no macOS counterpart yet.
+                        skipUnknownBlock(named: t, context: "gestures (no macOS counterpart)")
+                    default:
+                        skipUnknownBlock(named: t, context: "gestures section")
+                    }
+                    continue
+                }
                 let parts = statement(firstToken: t)
                 let action = parts.dropFirst().joined(separator: " ")
                 switch parts[0] {
@@ -820,8 +855,17 @@ extension NigiriConfig {
                 case "default-column-width":
                     rule.defaultWidthProportion = inlineProportion()
                 default:
-                    print("[config] unknown window-rule key: \(t)")
-                    _ = statement(firstToken: t)
+                    // A block value (niri's per-rule border{}, shadow{},
+                    // focus-ring{}...) must be skipped as a BLOCK: consumed
+                    // as statements it corrupted the parse of every rule
+                    // after it in a genuine niri config.
+                    if next() == "{" {
+                        i += 1
+                        skipUnknownBlock(named: t, context: "window-rule key")
+                    } else {
+                        print("[config] unknown window-rule key: \(t)")
+                        _ = statement(firstToken: t)
+                    }
                 }
             }
             config.rules.append(rule)
@@ -912,9 +956,18 @@ extension NigiriConfig {
             case "window-rule": if next() == "{" { i += 1; parseWindowRule() }
             case "input": if next() == "{" { i += 1; parseInput() }
             case "spawn-at-startup":
+                // niri's spawn-at-startup is argv, no shell (misc.rs) -
+                // joining into one /bin/sh line collapsed quoted args
+                // ("Google Chrome" became two shell words) and let a missing
+                // binary fail INSIDE sh, undetectably.
+                let parts = statement(firstToken: t)
+                let argv = Array(parts.dropFirst())
+                if !argv.isEmpty { config.spawnAtStartup.append(argv) }
+            case "spawn-sh-at-startup":
+                // niri's shell twin (misc.rs), previously unparsed.
                 let parts = statement(firstToken: t)
                 let command = parts.dropFirst().joined(separator: " ")
-                if !command.isEmpty { config.spawnAtStartup.append(command) }
+                if !command.isEmpty { config.spawnShAtStartup.append(command) }
             case "workspace":
                 let parts = statement(firstToken: t)
                 if let name = parts.dropFirst().first, !name.isEmpty { config.namedWorkspaces.append(name) }

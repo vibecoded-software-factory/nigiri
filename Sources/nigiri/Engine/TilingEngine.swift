@@ -255,6 +255,16 @@ final class TilingEngine {
     // Magic Mouse swipes, by finger count.
     var gestureMouseOne: [SwipeDirection: String] = [:]
     var gestureMouseTwo: [SwipeDirection: String] = [:]
+    // niri's hot corners (gestures { hot-corners {} }): 1x1 screen corners
+    // that toggle the overview, edge-triggered. Copied from config on every
+    // reload; checked by a light pointer poll (see checkHotCorner).
+    var hotCornersOff = false
+    var hotCornerTopLeft = false
+    var hotCornerTopRight = false
+    var hotCornerBottomLeft = false
+    var hotCornerBottomRight = false
+    var pointerInsideHotCorner = false
+    var hotCornerTimer: Timer?
     // The config's animations section (see animationCurve(named:)).
     var configuredAnimations: [String: AnimationCurve] = [:]
     var animationsOff = false
@@ -1047,6 +1057,15 @@ final class TilingEngine {
         // past it. didTerminate above is the fast path; this slow sweep catches
         // the rest so the layout can never stay shrunk with nothing on screen to
         // explain it. It only probes pids while a zone is actually reserved.
+        // niri's hot corner (input/mod.rs): entering the 1x1 corner toggles
+        // the overview, edge-triggered, moving out re-arms it. There is no
+        // pointer-motion hook on macOS worth taking a permanent event tap
+        // for, and a flicked pointer RESTS against the corner, so a light
+        // poll is enough.
+        hotCornerTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkHotCorner() }
+        }
+
         strutPruneTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.reservedStruts.isEmpty else { return }
@@ -1061,7 +1080,8 @@ final class TilingEngine {
         applyConfig(initialConfig, initial: true)
         // Startup-only, never re-run on reload (niri's semantics: these are
         // session companions, not supervised services).
-        for command in initialConfig.spawnAtStartup { spawnShell(command) }
+        for argv in initialConfig.spawnAtStartup { spawn(argv: argv) }
+        for command in initialConfig.spawnShAtStartup { spawnShell(command) }
 
         // Live reload (see ConfigWatcher: editors save atomically, which kills
         // the watched inode, so it re-arms itself).

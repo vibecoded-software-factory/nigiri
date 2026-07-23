@@ -46,7 +46,13 @@ extension TilingEngine {
     nonisolated(unsafe) static var spawnEnvironmentOverrides: [String: String] = [:]
 
     func spawn(_ command: String) {
-        let argv = Self.spawnArgv(command)
+        spawn(argv: Self.spawnArgv(command))
+    }
+
+    // niri's Spawn: argv, no shell (spawn-at-startup and the spawn bind
+    // both land here). A bare name resolves against PATH via /usr/bin/env
+    // the way execvp does; an absolute path is used as given.
+    func spawn(argv: [String]) {
         guard let executable = argv.first else { return }
         let process = Process()
         process.environment = Self.spawnEnvironment()
@@ -63,7 +69,7 @@ extension TilingEngine {
             try process.run()
             print("spawn: \(argv.joined(separator: " ⎵ "))")
         } catch {
-            print("spawn failed: \(command)")
+            print("spawn failed: \(argv.joined(separator: " "))")
         }
     }
 
@@ -150,5 +156,34 @@ extension TilingEngine {
             NSEvent.removeMonitor(monitor)
             mouseMonitor = nil
         }
+    }
+}
+
+extension TilingEngine {
+    // niri's is_inside_hot_corner (niri.rs): 1x1 logical corners of the
+    // output; explicit corners win, top-left is the default when none is
+    // set, `off` disables. Entering toggles the overview once (edge
+    // trigger); leaving re-arms.
+    func checkHotCorner() {
+        guard !hotCornersOff, let screen = NSScreen.screens.first else { return }
+        let f = screen.frame
+        let p = NSEvent.mouseLocation
+        let anyExplicit =
+            hotCornerTopLeft || hotCornerTopRight || hotCornerBottomLeft || hotCornerBottomRight
+        // Cocoa's origin is bottom-left; niri's top-left corner is (0, maxY).
+        let left = p.x <= f.minX + 1
+        let right = p.x >= f.maxX - 1
+        let top = p.y >= f.maxY - 1
+        let bottom = p.y <= f.minY + 1
+        var inside = false
+        if (hotCornerTopLeft || !anyExplicit), top, left { inside = true }
+        if hotCornerTopRight, top, right { inside = true }
+        if hotCornerBottomLeft, bottom, left { inside = true }
+        if hotCornerBottomRight, bottom, right { inside = true }
+        if inside, !pointerInsideHotCorner {
+            print("[hot-corner] pointer entered - toggling overview")
+            performAction("toggle-overview")
+        }
+        pointerInsideHotCorner = inside
     }
 }
