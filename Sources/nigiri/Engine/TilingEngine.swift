@@ -1099,10 +1099,16 @@ final class TilingEngine {
                 self.configLoadFailed = true
                 print("[config] reload failed - keeping the previous configuration")
             }
+            // The include set can change with every edit: re-watch what the
+            // load actually read.
+            self.configWatcher.watch(files: NigiriConfig.lastLoadedFiles)
             // niri broadcasts ConfigLoaded on every reload attempt, success
             // or failure.
             self.emitConfigLoaded()
         }
+        // The initial load's include set (the startup load above ran before
+        // the watcher existed).
+        configWatcher.watch(files: NigiriConfig.lastLoadedFiles)
 
         // niri's request shapes and the older bare-word ones, one entry point.
         msgServer.onRequest = { request in self.handleMsgRequest(request) }
@@ -1122,7 +1128,17 @@ final class TilingEngine {
             return true
         }
         mouseDrag.onPlainDrag = { point in self.overviewDragMove(point) }
-        mouseDrag.onScroll = { dx, dy, point in self.overviewPan(dx: dx, dy: dy, at: point) }
+        mouseDrag.onScroll = { dx, dy, point, continuous in
+            // niri's overview scroll semantics (input/mod.rs:3206): a REAL
+            // wheel's unmodified notches switch the focused workspace
+            // (FocusWorkspaceUp/DownUnderMouse); only the trackpad's
+            // continuous 1:1 scroll pans the row. The pan-on-wheel was
+            // invented ("there is nothing else for it to do" - there was).
+            if !continuous {
+                return self.overviewWheelWorkspaceSwitch(dy: dy)
+            }
+            return self.overviewPan(dx: dx, dy: dy, at: point)
+        }
         mouseDrag.onPlainUp = { point in self.overviewDragEnd(point) }
         mouseDrag.onBegin = { point, _ in
             guard !self.isTransitioningWorkspace, !self.isOverviewActive, self.modDrag == nil,

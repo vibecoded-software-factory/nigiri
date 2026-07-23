@@ -104,18 +104,18 @@ out at phantom sizes (PR #35).
 - [x] 24. MISSING: columns only widen to discovered minimums; niri also
   NARROWS when the client clamps smaller (max-size hints), so undersized
   answers leave a permanent gap. PR #35 covers the fully-fixed case only.
-- [ ] 25. INVENTED defaults: gaps 10 (niri 16), focus-ring purple gradient +
+- [x] 25. INVENTED defaults: gaps 10 (niri 16), focus-ring purple gradient +
   glow (niri solid rgb(127,200,255), shadow off), tab indicator on the right
   with gaps/radius/colors niri doesn't have (niri: left, 0, 0, derived from
   focus-ring), spring stiffness 2200 (niri defaults 800/1000) - the user's
   personal config baked in as the built-in defaults.
-- [ ] 26. INVENTED: overview plain wheel pans the hovered row; niri maps
+- [x] 26. INVENTED: overview plain wheel pans the hovered row; niri maps
   unmodified wheel to FocusWorkspaceUp/DownUnderMouse (workspace switching)
   (TilingEngine+Overview.swift:806 vs input/mod.rs:3206).
 - [ ] 27. DIVERGENT: overview insert hint drawn as 14px bars; niri renders a
   filled 300px slab / 150px band (the non-overview drag hint is closer but
   uses computed sizes instead of niri's constants).
-- [ ] 28. DIVERGENT IPC shapes: Version is an object (niri: string), Outputs an
+- [x] 28. DIVERGENT IPC shapes: Version is an object (niri: string), Outputs an
   array (niri: map by name) with missing fields + invented `is_focused`;
   Workspace missing `is_urgent`; `active_window_id` only on the active one.
 - [ ] 29. MISSING: `window-open` animation parsed but never played; every frame
@@ -126,7 +126,7 @@ out at phantom sizes (PR #35).
 - [ ] 31. DIVERGENT: new floating windows keep macOS placement; niri centers
   them (floating.rs:449). Re-floated windows: niri restores the stored float
   position; nigiri always re-offsets +50,+50.
-- [ ] 32. DIVERGENT: overview empty-space click closes without switching; niri
+- [x] 32. DIVERGENT: overview empty-space click closes without switching; niri
   switches to the workspace under the cursor. Card chrome (border/plate/
   padding) and "Workspace N" chips in the macOS-13 fallback are nigiri styling.
 - [ ] 33. INVENTED: unmodified wheel binds silently promoted to Mod, plus a
@@ -155,10 +155,15 @@ out at phantom sizes (PR #35).
   clear-zone stay: documented macOS substitutes).
 - [ ] 40. Tab indicator: honor config (position, gaps-between-tabs,
   corner-radius, colors derived from focus-ring, urgent) instead of constants.
-- [ ] 41. ConfigWatcher only watches config.kdl: editing an INCLUDED file
+- [x] 41. ConfigWatcher only watches config.kdl: editing an INCLUDED file
   (gestures.kdl, dms/windowrules.kdl) does not trigger the live reload -
   found while live-testing hot corners. niri watches the whole config set.
 - [ ] 42. The invented gestures{} keys (three-finger-*, mouse-*) are kept as
   a documented nigiri extension (Magic Mouse has no niri counterpart), but
   they live inside niri's OWN config namespace, which real niri rejects -
   they need a nigiri-specific home (separate file or env-gated include).
+- [ ] 43. INVENTED-ADJACENT (same class as item 9): a top-level block with an
+  argument before the brace (niri's `output "name" { }`) is not recognized as
+  a block - the `{` and its contents parse as top-level lines (seen live:
+  "unknown top-level line: output" then "{"). Needs the same skip-as-block
+  treatment; parsing outputs for real is separate (multi-monitor).

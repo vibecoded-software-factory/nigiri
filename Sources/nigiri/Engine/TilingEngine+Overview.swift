@@ -804,6 +804,36 @@ extension TilingEngine {
     // too: in the overview there is nothing else for it to do (the panel owns
     // the screen), and refusing it would make the feature useless on anything
     // but a trackpad.
+    // Which workspace a point in the overview belongs to. niri tiles the
+    // whole vertical space with workspace rows, so every y answers; the
+    // bands here only cover rows WITH cards (an empty workspace draws
+    // nothing), so past the last band the trailing empty workspace answers,
+    // and between bands the nearest one does.
+    func overviewWorkspaceIndex(at point: CGPoint) -> Int? {
+        if let hit = overviewRowBands.first(where: { $0.band.contains(point) }) {
+            return hit.wsIndex
+        }
+        if let last = overviewRowBands.last, point.y > last.band.maxY {
+            return min(last.wsIndex + 1, workspaces.count - 1)
+        }
+        if let first = overviewRowBands.first, point.y < first.band.minY {
+            return max(first.wsIndex - 1, 0)
+        }
+        return overviewRowBands.min {
+            abs($0.band.midY - point.y) < abs($1.band.midY - point.y)
+        }?.wsIndex
+    }
+
+    // niri's FocusWorkspaceUp/DownUnderMouse: a real mouse wheel's
+    // unmodified notches in the overview switch the focused workspace
+    // (input/mod.rs:3206); only the trackpad's continuous scroll pans.
+    @discardableResult
+    func overviewWheelWorkspaceSwitch(dy: CGFloat) -> Bool {
+        guard isOverviewActive, overviewUsedPanel, dy != 0 else { return false }
+        overviewJumpRow(dy > 0 ? -1 : 1)
+        return true
+    }
+
     @discardableResult
     func overviewPan(dx: CGFloat, dy: CGFloat, at point: CGPoint) -> Bool {
         guard isOverviewActive, overviewUsedPanel else { return false }
@@ -1100,8 +1130,18 @@ extension TilingEngine {
         let moved = overviewDragDownPoint.map { hypot(point.x - $0.x, point.y - $0.y) } ?? 0
         overviewPanel.setDropHint(nil)
         guard let idx = overviewDragIndex else {
-            // Pressed empty space: a click there closes the overview.
-            if moved < 8 { exitOverview() }
+            // Pressed empty space: niri switches to the workspace under the
+            // cursor and closes the overview (input/mod.rs:3010) - closing
+            // without switching was invented.
+            if moved < 8 {
+                let wsIndex = overviewWorkspaceIndex(at: point)
+                exitOverview()
+                if let wsIndex, wsIndex != activeWorkspaceIndex,
+                    workspaces.indices.contains(wsIndex)
+                {
+                    focusWorkspace(wsIndex + 1)
+                }
+            }
             return
         }
         // The WINDOW that was grabbed, re-checked against the current model:
