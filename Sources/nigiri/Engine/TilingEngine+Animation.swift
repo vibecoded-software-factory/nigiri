@@ -231,12 +231,20 @@ extension TilingEngine {
         }
         var anims: [Anim] = targets.compactMap { entry in
             guard let start = WindowMover.currentFrame(entry.window.axElement) else { return nil }
+            // A size the app has already answered differently is aimed at
+            // the ANSWER, not the request (see reachableTarget): the ring
+            // and borders ride these targets, and a target the window will
+            // never occupy grew the decorations around it on every focus
+            // change, popping back to reality only at the deferred
+            // verification pass.
+            let frame = ColumnLayoutEngine.reachableTarget(
+                entry.frame, memo: entry.window.refusalMemo)
             // Already in place - or sitting at the app's known clamped answer
             // to this exact frame (see ManagedWindow.lastRequestedFrame):
             // re-asking can't move it, so animating it just re-fights the
             // refusal - visibly, as off-screen columns "dancing" from their
             // clamped position toward an unreachable target on every pass.
-            var done = ColumnLayoutEngine.isClose(start, entry.frame, tolerance: 0.5)
+            var done = ColumnLayoutEngine.isClose(start, frame, tolerance: 0.5)
             if !done, let memo = entry.window.refusalMemo,
                 ColumnLayoutEngine.isClose(entry.frame, memo.requested),
                 ColumnLayoutEngine.isClose(start, memo.actual)
@@ -247,11 +255,12 @@ extension TilingEngine {
             // needs the size touched mid-flight - and a size write forces
             // the app to re-layout its whole content every tick, which is
             // what made translations render visibly less smoothly than the
-            // window could actually move.
+            // window could actually move. Substituted targets land here by
+            // construction: the reachable size IS the window's current one.
             let translationOnly =
-                abs(start.width - entry.frame.width) <= 0.5 && abs(start.height - entry.frame.height) <= 0.5
+                abs(start.width - frame.width) <= 0.5 && abs(start.height - frame.height) <= 0.5
             return Anim(
-                window: entry.window, start: start, target: entry.frame, done: done, lastWritten: start,
+                window: entry.window, start: start, target: frame, done: done, lastWritten: start,
                 translationOnly: translationOnly)
         }
         guard anims.contains(where: { !$0.done }) else {
