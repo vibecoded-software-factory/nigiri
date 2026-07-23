@@ -1099,10 +1099,16 @@ final class TilingEngine {
                 self.configLoadFailed = true
                 print("[config] reload failed - keeping the previous configuration")
             }
+            // The include set can change with every edit: re-watch what the
+            // load actually read.
+            self.configWatcher.watch(files: NigiriConfig.lastLoadedFiles)
             // niri broadcasts ConfigLoaded on every reload attempt, success
             // or failure.
             self.emitConfigLoaded()
         }
+        // The initial load's include set (the startup load above ran before
+        // the watcher existed).
+        configWatcher.watch(files: NigiriConfig.lastLoadedFiles)
 
         // niri's request shapes and the older bare-word ones, one entry point.
         msgServer.onRequest = { request in self.handleMsgRequest(request) }
