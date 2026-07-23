@@ -92,6 +92,31 @@ enum ColumnLayoutEngine {
         return result
     }
 
+    // niri sizes every decoration from the tile's ACTUAL animated geometry
+    // (tile.rs, update_render_elements), so decoration and content are one
+    // rectangle by construction. Here the decorations ride the animation
+    // targets, so a size the app has already refused (Discord's 800px
+    // minimum asked to take a 710px slot) sent the ring growing into a
+    // rectangle the window will never occupy, sitting wrong through the
+    // settle and popping to reality only at the deferred verification -
+    // on EVERY focus change, because the memo suppression matched the full
+    // rect and a strip scroll shifts the origin. Aim for the app's ANSWER
+    // at the new origin instead: the flight becomes a pure translation of
+    // the real window. The memo is epoch-guarded, so a constraint that may
+    // have changed (config reload, screen change, explicit resize) is still
+    // re-asked.
+    static func reachableTarget(
+        _ target: CGRect, memo: (requested: CGRect, actual: CGRect)?
+    ) -> CGRect {
+        guard let memo,
+            abs(target.width - memo.requested.width) <= 1.0,
+            abs(target.height - memo.requested.height) <= 1.0,
+            abs(memo.actual.width - memo.requested.width) > 1.0
+                || abs(memo.actual.height - memo.requested.height) > 1.0
+        else { return target }
+        return CGRect(origin: target.origin, size: memo.actual.size)
+    }
+
     // The two directions of the width formula above. Every conversion goes
     // through these: four other sites used to invert with a DIFFERENT,
     // column-count-dependent formula, so a column's clamped floor and the

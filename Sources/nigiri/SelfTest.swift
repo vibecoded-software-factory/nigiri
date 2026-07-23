@@ -105,6 +105,32 @@ enum SelfTest {
             columns: [fixedCol], usableWidth: usableWidth, maximizedIndex: 0)
         expectEqual(maxedFixed[0].width, 440, "maximize cannot outgrow a fixed-size window either")
 
+        // niri sizes decorations from the tile's ACTUAL geometry; an
+        // animation target the app already refused is aimed at the app's
+        // answer at the new origin, so ring and window stay one rectangle.
+        let refused = (
+            requested: CGRect(x: 10, y: 54, width: 710, height: 892),
+            actual: CGRect(x: 10, y: 54, width: 800, height: 892)
+        )
+        expect(
+            ColumnLayoutEngine.isClose(
+                ColumnLayoutEngine.reachableTarget(
+                    CGRect(x: 500, y: 54, width: 710, height: 892), memo: refused),
+                CGRect(x: 500, y: 54, width: 800, height: 892)),
+            "a refused size re-aims at the answer, translated to the new origin")
+        expect(
+            ColumnLayoutEngine.isClose(
+                ColumnLayoutEngine.reachableTarget(
+                    CGRect(x: 500, y: 54, width: 600, height: 892), memo: refused),
+                CGRect(x: 500, y: 54, width: 600, height: 892)),
+            "a DIFFERENT size request is not the memoized one - ask the app")
+        expect(
+            ColumnLayoutEngine.isClose(
+                ColumnLayoutEngine.reachableTarget(
+                    CGRect(x: 500, y: 54, width: 710, height: 892), memo: nil),
+                CGRect(x: 500, y: 54, width: 710, height: 892)),
+            "no memo, no substitution")
+
         // REGRESSION: four sites inverted the width with a different,
         // count-dependent formula, so a column's floor moved when an
         // unrelated column opened.

@@ -30,13 +30,14 @@ out at phantom sizes (PR #35).
 - [x] 5. DIVERGENT CLI: legacy `nigiri msg windows` shape has no `app_id`,
   1-based `workspace`, `focused`/`floating`/`frame` names. Verified live while
   debugging the AWS VPN rule: matching by app id was impossible from the CLI.
-- [ ] 6. INVENTED: decorations animate toward spring-interpolated LAYOUT
+- [x] 6. INVENTED: decorations animate toward spring-interpolated LAYOUT
   TARGETS (ring per tick = anim.lastWritten, settle = target, reality only
   after a 60ms verification pass -> visible pop). niri sizes ring/border/tab
   indicator from the tile's animated ACTUAL geometry (tile.rs:459-538), so
   divergence is impossible by construction. PR #35 fixed the fixed-size case;
-  min-size-CLAMPED windows still grow-and-pop on every focus change
-  (TilingEngine+Animation.swift:424,447-459,475,502-507).
+  the general min-size-clamp case is fixed by aiming animations at the
+  memoized ANSWER translated to the new origin (reachableTarget) - the
+  one remaining fight is the unavoidable first discovery per epoch.
 - [ ] 7. INVENTED: on monitor detach, every workspace of the dead output is
   dissolved into the survivor's active workspace. niri moves workspaces
   wholesale to the primary, preserving identity/order, and remembers
