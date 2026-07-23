@@ -22,6 +22,21 @@ final class ManagedWindow {
     // to re-ask AX on every write (a 0.046ms IPC round-trip, twice per window
     // per tick at 120Hz) for an answer that does not change.
     var positionSettable = true
+    // The window's size when kAXSizeAttribute is NOT settable - the AX
+    // analogue of a Wayland client whose min size equals its max size. niri
+    // clamps such a tile's column to exactly this size (scrolling.rs,
+    // update_tile_sizes_with_transaction: width clamped into
+    // [min_width, max_width]; height: `if min_size.h == max_size.h
+    // { *h = WindowHeight::Fixed(min_size.h) }`). nil for resizable windows.
+    // Refreshed by collect's full probe, so a window that becomes resizable
+    // sheds the clamp. Without it a rule-tiled fixed-size window (AWS VPN
+    // Client) kept a phantom full-proportion column: the layout targeted
+    // 720x892 for a window that is forever 440x388, and every decoration
+    // animated toward frames that never matched reality.
+    var fixedSize: CGSize? = nil
+    // niri scrolling.rs: an exact height constraint overrides the stored
+    // height, manual or not.
+    var effectiveFixedHeightPx: CGFloat? { fixedSize?.height ?? manualHeightPx }
     // When collectCurrentAXWindows last probed this window's shape (subrole,
     // close button, settable-ness) rather than taking the cached answer.
     var lastFullProbe = Date.distantPast

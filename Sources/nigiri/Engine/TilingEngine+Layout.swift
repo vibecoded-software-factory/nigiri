@@ -203,7 +203,16 @@ extension TilingEngine {
                     // "min size == max size" is a non-settable size (About
                     // panels, alerts with a close button). Tiling one just
                     // fights a resize it can never win.
-                    let kind: CollectedKind = AX.isSettable(w, kAXSizeAttribute as String) ? .tiled : .dialog
+                    let sizeSettable = AX.isSettable(w, kAXSizeAttribute as String)
+                    let kind: CollectedKind = sizeSettable ? .tiled : .dialog
+                    // The full probe is also where a known window's exact-size
+                    // constraint is refreshed (see ManagedWindow.fixedSize): a
+                    // window that becomes resizable sheds the clamp, one that
+                    // stops being resizable gains it.
+                    if let known = knownWindow(for: w) {
+                        known.fixedSize =
+                            sizeSettable ? nil : (WindowMover.currentFrame(w)?.size ?? known.fixedSize)
+                    }
                     result.append((w, app.processIdentifier, title.isEmpty ? "(no title)" : title, kind))
                 } else {
                     // No close button = transient/parented, niri's "windows
@@ -628,6 +637,14 @@ extension TilingEngine {
             let rule = matchingWindowRule(appName: appName, bundleID: app?.bundleIdentifier, title: title)
             let window = ManagedWindow(axElement: element, pid: pid, title: title)
             window.isDialog = kind == .dialog
+            // A non-settable size is the AX analogue of min == max: niri
+            // clamps that tile's column to exactly this size (see
+            // ManagedWindow.fixedSize). Probed at adoption because a rule
+            // can force such a window into the tiled layout, where the
+            // clamp is what keeps the column honest about its geometry.
+            if !AX.isSettable(element, kAXSizeAttribute as String) {
+                window.fixedSize = WindowMover.currentFrame(element)?.size
+            }
             // On INITIAL adoption (cataloguing an existing session) a window
             // belongs to the output it is physically on, so windows already on
             // the external monitor are not yanked onto the primary. A genuinely
