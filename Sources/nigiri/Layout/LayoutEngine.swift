@@ -665,7 +665,8 @@ enum ColumnLayoutEngine {
                 // `share` starts as each window's weighted share and only
                 // becomes a flat redistribution once someone refuses.
                 let targetH =
-                    w.effectiveFixedHeightPx ?? (stuck[i] ? heights[i] : (redistributed ? share : weightedShare(w)))
+                    w.effectiveFixedHeightPx
+                    ?? (stuck[i] ? heights[i] : (redistributed ? share : weightedShare(w)))
                 let actual = applyFrame(w, target: CGRect(x: x, y: currentY, width: width, height: targetH))
                     .height
                 heights[i] = actual
