@@ -675,14 +675,31 @@ extension TilingEngine {
                 if shouldFloat, let pos = rule?.defaultFloatingPosition,
                     let f = WindowMover.currentFrame(element)
                 {
-                    window.stashedFrame = CGRect(origin: pos, size: f.size)
-                    try? WindowMover.setPosition(element, to: pos)
+                    // niri's relative-to anchor (window_rule.rs, RelativeTo):
+                    // x/y are measured from that corner of the working area,
+                    // growing inward. Default (nil) is top-left. The edge
+                    // variants (top, left...) fall back to their corner.
+                    let wa = usableScreen().frame
+                    let anchor = rule?.defaultFloatingPositionRelativeTo ?? "top-left"
+                    let fromRight = anchor.contains("right")
+                    let fromBottom = anchor.contains("bottom")
+                    let origin = CGPoint(
+                        x: fromRight ? wa.maxX - pos.x - f.width : wa.minX + pos.x,
+                        y: fromBottom ? wa.maxY - pos.y - f.height : wa.minY + pos.y)
+                    window.stashedFrame = CGRect(origin: origin, size: f.size)
+                    try? WindowMover.setPosition(element, to: origin)
                 }
                 if rule?.openFullscreen == true {
+                    // The SAME fullscreen the fullscreen-window action gives
+                    // (niri: open-fullscreen produces exactly the action's
+                    // state). This used to set native AXFullScreen - a
+                    // separate macOS Space, out of the tiling model - so the
+                    // rule and the action landed in two different states.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         MainActor.assumeIsolated {
-                            _ = AXUIElementSetAttributeValue(
-                                element, "AXFullScreen" as CFString, true as CFBoolean)
+                            guard self.fullscreenWindowRef !== window else { return }
+                            self.focusWindowByID(window.id)
+                            self.toggleWindowedFullscreen()
                         }
                     }
                 }
@@ -955,7 +972,7 @@ extension TilingEngine {
             watcher.applyingLayout {
                 if let full = fullscreenWindowRef {
                     _ = ColumnLayoutEngine.applyFrame(
-                        full, target: currentRawScreenFrame())
+                        full, target: currentFullscreenFrame())
                 }
             }
             return false
@@ -967,7 +984,7 @@ extension TilingEngine {
         if let full = fullscreenWindowRef {
             watcher.applyingLayout {
                 _ = ColumnLayoutEngine.applyFrame(
-                    full, target: currentRawScreenFrame())
+                    full, target: currentFullscreenFrame())
                 for w in workspace.allWindows where w !== full {
                     guard let current = WindowMover.currentFrame(w.axElement) else { continue }
                     // Floating windows are never re-laid-out by the tiling
@@ -1032,7 +1049,7 @@ extension TilingEngine {
         // frame (no gaps), and the strip underneath keeps its own layout -
         // leaving fullscreen restores everything without a re-tile.
         if let full = fullscreenWindowRef {
-            let raw = currentRawScreenFrame()
+            let raw = currentFullscreenFrame()
             if let idx = targets.firstIndex(where: { $0.window === full }) {
                 targets[idx].frame = raw
             } else {

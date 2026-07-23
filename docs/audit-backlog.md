@@ -58,27 +58,29 @@ out at phantom sizes (PR #35).
   corner even on an all-default config (niri.rs:3070). No code at all.
 - [x] 11. MISSING: bind `repeat` is parsed but inert; niri re-fires held keys
   by default. Held-key navigation repeats on niri, not on nigiri.
-- [ ] 12. INVENTED: `toggle-window-floating` refuses to tile dialogs
+- [x] 12. INVENTED: `toggle-window-floating` refuses to tile dialogs
   (Actions.swift:887); niri moves any window either way. The refusal-demotion
   machinery already covers the practical concern; the veto is redundant policy.
-- [ ] 13. INVENTED: `fullscreen-window`, `maximize-window-to-edges` and
+- [x] 13. INVENTED: `fullscreen-window`, `maximize-window-to-edges` and
   `toggle-windowed-fullscreen` all funnel into one windowed-fullscreen toggle;
   niri has three distinct states (Actions.swift:562-627).
-- [ ] 14. INVENTED (contradiction): the `open-fullscreen` RULE sets native
+- [x] 14. INVENTED (contradiction): the `open-fullscreen` RULE sets native
   AXFullScreen (out of the model) while the fullscreen ACTION deliberately
   avoids it; in niri rule and action produce the same state
   (TilingEngine+Layout.swift:664-671).
-- [ ] 15. DIVERGENT (merge bug): `open-maximized`/`open-fullscreen` are
+- [x] 15. DIVERGENT (merge bug): `open-maximized`/`open-fullscreen` are
   sticky-true Bools; niri is last-set-wins Option<bool>, so a specific
   `false` cannot override a general `true` (Config.swift:77, TilingEngine.swift:111).
-- [ ] 16. MISSING: rules resolve once at adoption; niri recomputes on
+- [~] 16. PARTIAL: at-startup now 60s like niri; dynamic recompute
+  still pending (no honored rule field is dynamic yet, so open-time-only
+  matching currently equals niri behavior). Original: rules resolve once at adoption; niri recomputes on
   state/title changes + a 60s startup timer. nigiri's `is-active`/`is-floating`
   matchers are dead code (always false at adoption). `at-startup` = 5s latched
   vs niri's 60s recomputed (TilingEngine+Layout.swift:628, TilingEngine.swift:93).
-- [ ] 17. DIVERGENT: `default-floating-position` parses bare "x y" only;
+- [x] 17. DIVERGENT: `default-floating-position` parses bare "x y" only;
   niri's `x=... y=... relative-to=...` syntax is SILENTLY dropped
   (ConfigParser.swift:810). `open-on-workspace` accepts numbers; niri names only.
-- [ ] 18. DIVERGENT: `is-active` and `is-focused` conflated into one matcher;
+- [x] 18. DIVERGENT: `is-active` and `is-focused` conflated into one matcher;
   niri distinguishes them. Missing matchers: is-active-in-column, is-urgent,
   is-window-cast-target (ConfigParser.swift:786-788).
 
