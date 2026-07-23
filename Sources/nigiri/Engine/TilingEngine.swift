@@ -90,7 +90,10 @@ final class TilingEngine {
         appName: String, bundleID: String? = nil, title: String,
         isActive: Bool = false, isFloating: Bool = false
     ) -> NigiriConfig.Rule? {
-        let atStartup = Date().timeIntervalSince(startedAt) < 5
+        // niri clears is_at_startup after 60 seconds (niri.rs), not 5 - and
+        // recomputes rules at that boundary; nigiri's honored rule fields
+        // are all consumed at adoption, so the constant is the whole story.
+        let atStartup = Date().timeIntervalSince(startedAt) < 60
         func hits(_ matchers: [NigiriConfig.Matcher]) -> Bool {
             matchers.contains {
                 $0.matches(
@@ -108,8 +111,11 @@ final class TilingEngine {
             if let v = rule.defaultWidthProportion { merged?.defaultWidthProportion = v }
             if let v = rule.openOnWorkspace { merged?.openOnWorkspace = v }
             if let v = rule.openOnWorkspaceName { merged?.openOnWorkspaceName = v }
-            if rule.openMaximized { merged?.openMaximized = true }
-            if rule.openFullscreen { merged?.openFullscreen = true }
+            // Last-set-wins Option<bool>, niri's merge (window/mod.rs):
+            // sticky-true made a specific `open-maximized false` unable to
+            // override a general true.
+            if let v = rule.openMaximized { merged?.openMaximized = v }
+            if let v = rule.openFullscreen { merged?.openFullscreen = v }
             if let v = rule.defaultFloatingPosition { merged?.defaultFloatingPosition = v }
             if let v = rule.minWidthPx { merged?.minWidthPx = v }
             if let v = rule.maxWidthPx { merged?.maxWidthPx = v }

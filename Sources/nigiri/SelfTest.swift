@@ -312,6 +312,28 @@ enum SelfTest {
             NigiriConfig.parseCombo("Hyper+F19")?.1 == [.command, .option, .control, .shift],
             "Hyper is all four")
         expect(NigiriConfig.parseCombo("Garbage+A") == nil, "a nonexistent modifier is rejected")
+
+        // --- window-rule niri syntax --------------------------------------
+        let ruleConfig = NigiriConfig.parse(
+            """
+            window-rule {
+                match app-id="org.example.app" is-focused="true"
+                default-floating-position x=32 y=64 relative-to="bottom-right"
+                open-maximized false
+            }
+            """)
+        expectEqual(
+            ruleConfig.rules.first?.defaultFloatingPosition ?? .zero, CGPoint(x: 32, y: 64),
+            "default-floating-position parses niri's x=/y= property form")
+        expectEqual(
+            ruleConfig.rules.first?.defaultFloatingPositionRelativeTo ?? "", "bottom-right",
+            "and carries the relative-to anchor")
+        expect(
+            ruleConfig.rules.first?.matchers.first?.isFocused == true,
+            "is-focused is its own matcher, not an is-active alias")
+        expect(
+            ruleConfig.rules.first?.openMaximized == false,
+            "open-maximized false is a real value, not merged away")
         expectEqual(
             NigiriConfig.wheelBindingKey(for: "Mod+WheelScrollDown") ?? "", "mod-down",
             "niri's wheel binds are accepted")

@@ -160,6 +160,11 @@ final class Workspace {
     // global state made a switch apply the leaving workspace's fullscreen to
     // the one being entered.
     var fullscreenWindow: ManagedWindow? = nil
+    // niri keeps fullscreen and maximize-to-edges as SEPARATE states
+    // (SizingMode::Fullscreen vs ::Maximized): fullscreen fills the raw
+    // output, maximize-to-edges fills the working area. Same machinery
+    // here, different target frame; reset when fullscreen ends.
+    var fullscreenToEdges = false
     // Horizontal scroll position (camera) in the same virtual coordinate
     // space as ColumnLayoutEngine.columnPlacements - niri's infinite
     // scrollable strip. Column 0 starts at virtual x=0; later columns sit at

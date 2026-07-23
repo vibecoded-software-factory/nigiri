@@ -560,7 +560,33 @@ extension TilingEngine {
     // niri-shaped action is the windowed one, and the native Space is
     // available separately as native-fullscreen for whoever wants it.
     func fullscreenWindow() {
-        toggleWindowedFullscreen()
+        setWindowedFullscreen(toEdges: false)
+    }
+
+    // Fullscreen and maximize-to-edges share the machinery but are niri's
+    // two distinct states (SizingMode::Fullscreen / ::Maximized): raw
+    // output vs working area. Same-mode repeat toggles off; the other mode
+    // switches in place.
+    func setWindowedFullscreen(toEdges: Bool) {
+        if fullscreenWindowRef != nil {
+            if workspace.fullscreenToEdges == toEdges {
+                toggleWindowedFullscreen()
+            } else {
+                workspace.fullscreenToEdges = toEdges
+                print("windowed-fullscreen: \(toEdges ? "to edges" : "full output")")
+                reflow()
+            }
+        } else {
+            workspace.fullscreenToEdges = toEdges
+            toggleWindowedFullscreen()
+        }
+    }
+
+    // The target the current fullscreen mode fills: niri's Maximized stops
+    // at the working area (bar and struts respected), Fullscreen covers the
+    // raw output.
+    func currentFullscreenFrame() -> CGRect {
+        workspace.fullscreenToEdges ? usableScreen().frame : currentRawScreenFrame()
     }
 
     // The real macOS fullscreen Space, kept as its own action precisely
@@ -581,6 +607,7 @@ extension TilingEngine {
         // toggle a silent no-op and left the workspace stuck in fullscreen.
         if let current = fullscreenWindowRef {
             fullscreenWindowRef = nil
+            workspace.fullscreenToEdges = false
             if let c = workspace.columns.first(where: { $0.windows.contains { $0 === current } }) {
                 c.cachedHeights = nil
                 c.cachedMinWidth = nil
@@ -623,7 +650,7 @@ extension TilingEngine {
     // they are. nigiri used to set a workspace-wide flag that blew up the
     // entire column to the screen edges.
     func maximizeWindowToEdges() {
-        toggleWindowedFullscreen()
+        setWindowedFullscreen(toEdges: true)
     }
 
     // niri's consume-window-into-column (Mod+Comma): swallow the FIRST
@@ -882,12 +909,11 @@ extension TilingEngine {
                 print("toggle-window-floating: no focused floating window")
                 return
             }
-            // Dialogs live in the floating layer permanently - tiling one
-            // means the layout fighting a window that refuses to resize.
-            guard !workspace.floatingWindows[workspace.floatingFocusedIndex].isDialog else {
-                print("toggle-window-floating: dialogs stay floating")
-                return
-            }
+            // niri's toggle_window_floating moves ANY window either way
+            // (workspace.rs) - the dialog veto here was invented policy. A
+            // dialog that cannot resize is no longer a fight: the layout
+            // clamps its column to the fixed size (see ManagedWindow
+            // .fixedSize), exactly like niri bending to the client.
             let window = workspace.floatingWindows.remove(at: workspace.floatingFocusedIndex)
             workspace.focus(floating: workspace.floatingFocusedIndex)
             let newColumn = Column()

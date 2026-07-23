@@ -783,7 +783,10 @@ extension NigiriConfig {
                         switch k {
                         case "app-id", "app": matcher.app = Regex(v)
                         case "title": matcher.title = Regex(v)
-                        case "is-active", "is-focused": matcher.isActive = (v == "true")
+                        case "is-active": matcher.isActive = (v == "true")
+                        case "is-focused": matcher.isFocused = (v == "true")
+                        case "is-active-in-column": matcher.isActiveInColumn = (v == "true")
+                        case "is-urgent": matcher.isUrgent = (v == "true")
                         case "is-floating": matcher.isFloating = (v == "true")
                         case "at-startup": matcher.atStartup = (v == "true")
                         default: print("[config] unknown window-rule matcher: \(k)")
@@ -808,9 +811,24 @@ extension NigiriConfig {
                     let parts = statement(firstToken: t)
                     rule.openFullscreen = parts.last == "true"
                 case "default-floating-position":
+                    // niri's syntax is x=... y=... relative-to=...
+                    // (window_rule.rs); the bare "x y" form is kept for
+                    // configs already written against it. The property form
+                    // used to be dropped SILENTLY (compactMap over "x=100").
                     let parts = statement(firstToken: t)
-                    let nums = parts.dropFirst().compactMap { Double($0) }
-                    if nums.count == 2 { rule.defaultFloatingPosition = CGPoint(x: nums[0], y: nums[1]) }
+                    let props = Dictionary(
+                        uniqueKeysWithValues: keyValues(parts).map { ($0.0, $0.1) })
+                    if let x = props["x"].flatMap(Double.init),
+                        let y = props["y"].flatMap(Double.init)
+                    {
+                        rule.defaultFloatingPosition = CGPoint(x: x, y: y)
+                        rule.defaultFloatingPositionRelativeTo = props["relative-to"]
+                    } else {
+                        let nums = parts.dropFirst().compactMap { Double($0) }
+                        if nums.count == 2 {
+                            rule.defaultFloatingPosition = CGPoint(x: nums[0], y: nums[1])
+                        }
+                    }
                 case "min-width":
                     let parts = statement(firstToken: t)
                     rule.minWidthPx = Double(parts.last ?? "").map { CGFloat($0) }

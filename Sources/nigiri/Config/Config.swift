@@ -41,6 +41,12 @@ struct NigiriConfig {
         var title: Regex?
         // niri's state matchers.
         var isActive: Bool?
+        // niri keeps is-active (pending Activated state) and is-focused
+        // (keyboard focus) as DISTINCT matchers (window_rule.rs); both
+        // answer false at open time, like niri's unmapped windows.
+        var isFocused: Bool?
+        var isActiveInColumn: Bool?
+        var isUrgent: Bool?
         var isFloating: Bool?
         var atStartup: Bool?
 
@@ -57,6 +63,12 @@ struct NigiriConfig {
             }
             if let title, !title.matches(windowTitle) { return false }
             if let isActive, isActive != active { return false }
+            // Rules are resolved at adoption (open time), where niri also
+            // answers false for focus/urgency/column state - a matcher
+            // requiring true simply never fires at open, same as upstream.
+            if let isFocused, isFocused != false { return false }
+            if let isActiveInColumn, isActiveInColumn != false { return false }
+            if let isUrgent, isUrgent != false { return false }
             if let isFloating, isFloating != floating { return false }
             if let atStartup, atStartup != startup { return false }
             return true
@@ -70,13 +82,16 @@ struct NigiriConfig {
         // niri's exclude: any hit vetoes the rule.
         var excludes: [Matcher] = []
         var openFloating: Bool?
+        // niri's default-floating-position relative-to anchor
+        // (window_rule.rs, RelativeTo); nil = top-left.
+        var defaultFloatingPositionRelativeTo: String? = nil
         var defaultWidthProportion: CGFloat?
         // niri's open-on-workspace - by number, or by named workspace.
         var openOnWorkspace: Int?
         var openOnWorkspaceName: String?
-        var openMaximized: Bool = false
+        var openMaximized: Bool? = nil
         // niri's open-fullscreen (macOS native fullscreen on adoption).
-        var openFullscreen: Bool = false
+        var openFullscreen: Bool? = nil
         // niri's default-floating-position "x y" (AX/CG top-left space),
         // applied when the window opens floating.
         var defaultFloatingPosition: CGPoint?
