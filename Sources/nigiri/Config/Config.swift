@@ -120,7 +120,9 @@ struct NigiriConfig {
         var hiddenFromOverlay: Bool = false
     }
 
-    var gap: CGFloat = 10
+    // niri's default (layout.rs): gaps 16. The old 10 was the user's own
+    // config baked in as the built-in default.
+    var gap: CGFloat = 16
     // niri keeps ONE ordered Vec<PresetSize> per list (niri-config
     // layout.rs), and the order is the whole point: it is the cycle
     // Mod+R walks. Splitting it into "the proportions" and "the pixels"
@@ -143,22 +145,28 @@ struct NigiriConfig {
     // See macOSWindowCornerRadius: the radius the ring/border round their
     // corners by, matching macOS's own window corner. Measured, not guessed.
     var cornerRadius: CGFloat = 19
+    // niri's default focus-ring is SOLID rgb(127,200,255) (appearance.rs);
+    // both stops equal renders the gradient machinery as a solid. The
+    // purple gradient was the user's personal config baked in as default.
     var ringFrom: NSColor = NSColor(
-        calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1)
+        calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1)
     var ringTo: NSColor = NSColor(
-        calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
+        calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1)
     // niri draws the focus ring around EVERY window - active colour on the
     // focused one, inactive-color on the rest. nigiri used to have no
     // inactive ring at all, so with `border { off }` (niri's default, and
     // this user's config) non-focused windows wore no decoration whatsoever.
+    // niri: rgb(80,80,80) (appearance.rs).
     var ringInactiveColor: NSColor = NSColor(
-        calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
+        calibratedRed: 80 / 255.0, green: 80 / 255.0, blue: 80 / 255.0, alpha: 1)
     var ringOff: Bool = false
     // layout { tab-indicator { active-gradient / active-color / inactive-color } }
+    // niri derives unset tab colors from the focus-ring (tab_indicator.rs);
+    // these defaults are that derivation for the default ring.
     var tabActiveColor: NSColor = NSColor(
-        calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
+        calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1)
     var tabInactiveColor: NSColor = NSColor(
-        calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
+        calibratedRed: 80 / 255.0, green: 80 / 255.0, blue: 80 / 255.0, alpha: 1)
     var rules: [Rule] = []
     var binds: [Bind] = []
     // niri's layout.border: a plain stroke on NON-focused windows (the
