@@ -92,10 +92,13 @@ struct NigiriConfig {
         var modifiers: HotkeyListener.Modifiers
         var action: String
         // niri's per-bind properties. cooldown-ms rate-limits repeat
-        // firings; hotkey-overlay-title labels it in the overlay. repeat/
-        // allow-when-locked/allow-inhibiting are parsed but inert on macOS
-        // (Carbon hotkeys don't auto-repeat and there's no lock hook).
+        // firings; hotkey-overlay-title labels it in the overlay; repeat
+        // defaults to true like niri's (binds.rs) - Carbon hotkeys don't
+        // auto-repeat, so the listener re-fires held keys itself using the
+        // system's key-repeat delay and rate. allow-when-locked/
+        // allow-inhibiting stay inert (no lock hook on macOS).
         var cooldownMs: Int?
+        var repeats: Bool = true
         var title: String?
         // niri's hotkey-overlay-title=null: the bind works, but the
         // "Important Hotkeys" overlay does not list it.

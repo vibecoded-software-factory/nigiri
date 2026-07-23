@@ -422,7 +422,7 @@ extension TilingEngine {
             let action = bind.action
             let combo = bind.combo
             let cooldown = bind.cooldownMs
-            listener.register(bind.keyCode, modifiers: bind.modifiers) {
+            listener.register(bind.keyCode, modifiers: bind.modifiers, repeats: bind.repeats) {
                 // niri's cooldown-ms: rate-limit repeat firings of this bind.
                 if let cooldown {
                     let now = Date()
