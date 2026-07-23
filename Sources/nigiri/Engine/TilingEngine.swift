@@ -17,8 +17,12 @@ final class TilingEngine {
     let tileAll: Bool
     let watchedAppNames: [String]
     let neverTile: [String] = []
-    // Prefix-matched, so the whole com.apple.bluetooth* family is covered by
-    // one entry.
+    // Two families of system UI agent, both prefix-matched.
+    //
+    // Pure chrome: these only ever put non-window surfaces on screen (menu
+    // extras, the Dock, Stage Manager, the notification banners, the
+    // screenshot toolbar). There is nothing here a user interacts with as a
+    // window, so they are skipped entirely - never observed, never adopted.
     // nonisolated: the desktop capture reads it off the main actor too.
     nonisolated static let systemUIAgentBundleIDs: [String] = [
         "com.apple.controlcenter",
@@ -27,9 +31,21 @@ final class TilingEngine {
         "com.apple.WindowManager",
         "com.apple.dock",
         "com.apple.screencaptureui",
+        "com.apple.PowerChime",
+    ]
+
+    // Dialog-producing agents: these report .regular activationPolicy but the
+    // window they put up IS a real dialog the user must act on - the
+    // Bluetooth connection/pairing request, the location prompt, a system
+    // alert, the quarantine "downloaded from the internet" warning. They were
+    // denied wholesale after one such dialog got tiled as a column; now that
+    // the floating layer exists, they are observed and their windows forced
+    // floating (like the .accessory prompt path), never tiled - the same
+    // place niri puts a dialog. Still held to the dialog-like test, so their
+    // non-window chrome is filtered out.
+    nonisolated static let dialogAgentBundleIDs: [String] = [
         "com.apple.BluetoothUIServer",
         "com.apple.bluetooth",
-        "com.apple.PowerChime",
         "com.apple.CoreLocationAgent",
         "com.apple.UserNotificationCenter",
         "com.apple.coreservices.uiagent",
