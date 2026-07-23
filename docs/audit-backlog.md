@@ -104,7 +104,7 @@ out at phantom sizes (PR #35).
 - [ ] 24. MISSING: columns only widen to discovered minimums; niri also
   NARROWS when the client clamps smaller (max-size hints), so undersized
   answers leave a permanent gap. PR #35 covers the fully-fixed case only.
-- [ ] 25. INVENTED defaults: gaps 10 (niri 16), focus-ring purple gradient +
+- [x] 25. INVENTED defaults: gaps 10 (niri 16), focus-ring purple gradient +
   glow (niri solid rgb(127,200,255), shadow off), tab indicator on the right
   with gaps/radius/colors niri doesn't have (niri: left, 0, 0, derived from
   focus-ring), spring stiffness 2200 (niri defaults 800/1000) - the user's
@@ -115,7 +115,7 @@ out at phantom sizes (PR #35).
 - [ ] 27. DIVERGENT: overview insert hint drawn as 14px bars; niri renders a
   filled 300px slab / 150px band (the non-overview drag hint is closer but
   uses computed sizes instead of niri's constants).
-- [ ] 28. DIVERGENT IPC shapes: Version is an object (niri: string), Outputs an
+- [x] 28. DIVERGENT IPC shapes: Version is an object (niri: string), Outputs an
   array (niri: map by name) with missing fields + invented `is_focused`;
   Workspace missing `is_urgent`; `active_window_id` only on the active one.
 - [ ] 29. MISSING: `window-open` animation parsed but never played; every frame

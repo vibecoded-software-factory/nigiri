@@ -215,10 +215,11 @@ private final class RingView: NSView {
         super.init(frame: frame)
         wantsLayer = true
 
-        // active-gradient from="#7355a6" to="#cba6f7" angle=45
+        // niri's default ring: solid rgb(127,200,255) (appearance.rs). A
+        // configured active-gradient replaces this via applyStyle.
         gradientLayer.colors = [
-            NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1).cgColor,
-            NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1).cgColor,
+            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor,
+            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor,
         ]
         gradientLayer.startPoint = CGPoint(x: 0, y: 0)
         gradientLayer.endPoint = CGPoint(x: 1, y: 1)
@@ -228,16 +229,10 @@ private final class RingView: NSView {
         maskLayer.lineWidth = borderWidth
         gradientLayer.mask = maskLayer
 
-        // Active-window-only glow (windowrules-custom.kdl: softness 28,
-        // spread 4, offset 0,0, color #7355a677) - shadowPath is set to the
-        // ring's own outline in layout(), so the glow silhouette follows the
-        // ring shape instead of a plain rectangle.
-        gradientLayer.shadowColor =
-            NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 0x77 / 255.0)
-            .cgColor
-        gradientLayer.shadowOpacity = 1
-        gradientLayer.shadowRadius = 14
-        gradientLayer.shadowOffset = .zero
+        // niri ships shadow OFF by default (appearance.rs: on: false); a
+        // configured layout { shadow } turns the glow on via applyShadow.
+        // The glow-on-by-default came from the user's windowrules-custom.
+        gradientLayer.shadowOpacity = 0
 
         layer?.addSublayer(gradientLayer)
     }
@@ -251,7 +246,7 @@ private final class RingView: NSView {
         gradientLayer.shadowOffset = offset
         gradientLayer.shadowColor = color.cgColor
     }
-    private var shadowConfigured = true
+    private var shadowConfigured = false
 
     func applyStyle(width: CGFloat, from: NSColor, to: NSColor) {
         borderWidth = width

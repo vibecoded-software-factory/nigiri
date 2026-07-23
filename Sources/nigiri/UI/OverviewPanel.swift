@@ -238,13 +238,13 @@ final class OverviewPanel {
         selectionView.wantsLayer = true
         selectionView.layer?.borderWidth = 3
         selectionView.layer?.borderColor =
-            NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1).cgColor
+            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor
         selectionView.layer?.cornerRadius = 10
         selectionView.layer?.backgroundColor = NSColor.clear.cgColor
         // A soft glow so the ring reads over busy thumbnails, mirroring the
         // real focus ring's shadow.
         selectionView.layer?.shadowColor =
-            NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1).cgColor
+            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor
         selectionView.layer?.shadowOpacity = 0.9
         selectionView.layer?.shadowRadius = 10
         selectionView.layer?.shadowOffset = .zero
@@ -252,10 +252,10 @@ final class OverviewPanel {
 
         dropIndicator.wantsLayer = true
         dropIndicator.layer?.backgroundColor =
-            NSColor(calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 0.85).cgColor
+            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 0.85).cgColor
         dropIndicator.layer?.cornerRadius = 7
         dropIndicator.layer?.shadowColor =
-            NSColor(calibratedRed: 0x73 / 255.0, green: 0x55 / 255.0, blue: 0xa6 / 255.0, alpha: 1).cgColor
+            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor
         dropIndicator.layer?.shadowOpacity = 1
         dropIndicator.layer?.shadowRadius = 6
         dropIndicator.layer?.shadowOffset = .zero

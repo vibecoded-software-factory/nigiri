@@ -214,8 +214,13 @@ extension TilingEngine {
             "output": Self.outputName(NSScreen.screens.first) as Any,
             "is_active": active,
             "is_focused": active,
+            // niri reports urgency per workspace; no urgency machinery here
+            // yet (backlog 38), so honestly false rather than absent.
+            "is_urgent": false,
         ]
-        if active, let focused = focusedManagedWindow() { entry["active_window_id"] = Int(focused.id) }
+        // niri fills active_window_id for EVERY workspace (each tracks its
+        // own focus), not only the active one.
+        if let id = activeWindowId(of: ws) { entry["active_window_id"] = Int(id) }
         return entry
     }
 
@@ -223,23 +228,35 @@ extension TilingEngine {
         workspaces.enumerated().map { niriWorkspace($1, index: $0) }
     }
 
-    // niri's Output. macOS is single-display here (multi-monitor is not
-    // implemented), so this reports the one nigiri lays out on.
+    // niri's Output struct, field for field (niri-ipc/lib.rs:1210): the
+    // invented is_focused is gone (niri's Output has no such field), and
+    // the mode/vrr fields answer honestly for a display macOS abstracts
+    // away. Single Output object; the map shape is built at the request.
+    func niriOutput(_ screen: NSScreen, index: Int) -> [String: Any] {
+        let frame = screen.frame
+        let name = Self.outputName(screen) ?? "display-\(index)"
+        return [
+            "name": name,
+            "make": "Apple",
+            "model": name,
+            "serial": NSNull(),
+            "physical_size": NSNull(),
+            "modes": [[String: Any]](),
+            "current_mode": NSNull(),
+            "is_custom_mode": false,
+            "vrr_supported": false,
+            "vrr_enabled": false,
+            "logical": [
+                "x": Int(frame.origin.x), "y": Int(frame.origin.y),
+                "width": Int(frame.width), "height": Int(frame.height),
+                "scale": Double(screen.backingScaleFactor),
+                "transform": "normal",
+            ],
+        ]
+    }
+
     func niriOutputs() -> [[String: Any]] {
-        NSScreen.screens.enumerated().map { index, screen in
-            let frame = screen.frame
-            return [
-                "name": Self.outputName(screen) ?? "display-\(index)",
-                "make": "Apple",
-                "model": Self.outputName(screen) ?? "display-\(index)",
-                "logical": [
-                    "x": Int(frame.origin.x), "y": Int(frame.origin.y),
-                    "width": Int(frame.width), "height": Int(frame.height),
-                    "scale": Double(screen.backingScaleFactor),
-                ],
-                "is_focused": index == 0,
-            ]
-        }
+        NSScreen.screens.enumerated().map { index, screen in niriOutput(screen, index: index) }
     }
 
     // ---- requests ----
@@ -248,7 +265,9 @@ extension TilingEngine {
         let parsed = NiriProtocol.parse(line)
         switch parsed.request {
         case .version:
-            return ok(["Version": ["version": Self.version]], legacy: parsed.legacy)
+            // niri's Response::Version is a bare STRING ({"Ok":{"Version":
+            // "25.05"}}), not an object (niri-ipc/lib.rs:140).
+            return ok(["Version": Self.version], legacy: parsed.legacy)
         case .windows:
             return parsed.legacy ? jsonLine(windowsSnapshot()) : ok(["Windows": niriWindows()], legacy: false)
         case .workspaces:
@@ -273,7 +292,11 @@ extension TilingEngine {
                         row: nil, floating: workspace.isFloatingActive)
                 ], legacy: false)
         case .outputs:
-            return ok(["Outputs": niriOutputs()], legacy: parsed.legacy)
+            // niri's Response::Outputs is a MAP keyed by connector name
+            // (HashMap<String, Output>, lib.rs:145), not an array.
+            var byName: [String: Any] = [:]
+            for output in niriOutputs() { byName[output["name"] as? String ?? "?"] = output }
+            return ok(["Outputs": byName], legacy: parsed.legacy)
         case .focusedOutput:
             return ok(["FocusedOutput": niriOutputs().first as Any], legacy: parsed.legacy)
         case .overviewState:
