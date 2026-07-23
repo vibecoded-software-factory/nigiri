@@ -153,10 +153,15 @@ out at phantom sizes (PR #35).
   clear-zone stay: documented macOS substitutes).
 - [ ] 40. Tab indicator: honor config (position, gaps-between-tabs,
   corner-radius, colors derived from focus-ring, urgent) instead of constants.
-- [ ] 41. ConfigWatcher only watches config.kdl: editing an INCLUDED file
+- [x] 41. ConfigWatcher only watches config.kdl: editing an INCLUDED file
   (gestures.kdl, dms/windowrules.kdl) does not trigger the live reload -
   found while live-testing hot corners. niri watches the whole config set.
 - [ ] 42. The invented gestures{} keys (three-finger-*, mouse-*) are kept as
   a documented nigiri extension (Magic Mouse has no niri counterpart), but
   they live inside niri's OWN config namespace, which real niri rejects -
   they need a nigiri-specific home (separate file or env-gated include).
+- [ ] 43. INVENTED-ADJACENT (same class as item 9): a top-level block with an
+  argument before the brace (niri's `output "name" { }`) is not recognized as
+  a block - the `{` and its contents parse as top-level lines (seen live:
+  "unknown top-level line: output" then "{"). Needs the same skip-as-block
+  treatment; parsing outputs for real is separate (multi-monitor).

@@ -259,8 +259,17 @@ extension NigiriConfig {
         var visited: Set<String> = [realPath]
         let text = expandIncludes(
             rawText, baseDir: (realPath as NSString).deletingLastPathComponent, visited: &visited)
+        // Everything the live reload has to watch: the visited set is the
+        // authoritative list of files this parse actually read (includes
+        // resolved through symlinks). niri reloads on changes to any of the
+        // config set; watching only config.kdl left edits to an included
+        // file (gestures.kdl, dms/windowrules.kdl) silently un-applied.
+        lastLoadedFiles = Array(visited)
         return parse(text)
     }
+
+    // The files the most recent load() read - config.kdl plus every include.
+    nonisolated(unsafe) static var lastLoadedFiles: [String] = []
 
     // The parser proper, over already-included text. Split out from load()
     // so it can be exercised without a file on disk.
