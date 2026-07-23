@@ -95,7 +95,14 @@ enum NiriProtocol {
                         // and key=value alike.
                         for (k, v) in args.sorted(by: { $0.key < $1.key }) {
                             if let n = v as? Int {
-                                line += " \(n)"
+                                // niri's window-targeting payloads carry
+                                // {"id": N} and the line vocabulary spells
+                                // that id=N (close-window id=5). Flattened
+                                // positionally, the handler's kvArg("id")
+                                // never saw it and CloseWindow{id} closed
+                                // the FOCUSED window instead. Index-like
+                                // args (FocusColumn {index}) stay positional.
+                                line += k == "id" ? " id=\(n)" : " \(n)"
                             } else if let s = v as? String {
                                 line += " \(s)"
                             } else if let b = v as? Bool {
@@ -146,7 +153,7 @@ extension TilingEngine {
     // ---- niri-shaped serialization ----
 
     // niri's Window: id, title, app_id, pid, workspace_id, is_focused,
-    // is_floating, plus the layout position this compositor actually has.
+    // is_floating, layout (niri-ipc/src/lib.rs, Window + WindowLayout).
     func niriWindow(
         _ w: ManagedWindow, workspace: Workspace, column: Int?, row: Int?, floating: Bool
     ) -> [String: Any] {
@@ -159,14 +166,25 @@ extension TilingEngine {
             "is_focused": w === focusedManagedWindow(),
             "is_floating": floating,
         ]
-        if let column { entry["column"] = column }
-        if let row { entry["row"] = row }
-        if let frame = WindowMover.currentFrame(w.axElement) {
-            entry["layout"] = [
-                "x": Int(frame.origin.x), "y": Int(frame.origin.y),
-                "width": Int(frame.width), "height": Int(frame.height),
-            ]
-        }
+        // niri's WindowLayout, field for field. This used to be an invented
+        // {x,y,width,height} rect under niri's field name - the most
+        // misleading kind of divergence, because the key promised a shape it
+        // didn't have - plus invented top-level 0-based column/row (niri
+        // encodes that as layout.pos_in_scrolling_layout, 1-based). The tile
+        // and the window coincide here: nigiri's decorations are overlays
+        // OUTSIDE the window, not part of a tile, so tile_size == window
+        // size and the offset within the tile is zero.
+        let frame = WindowMover.currentFrame(w.axElement)
+        let pos: Any = (column != nil && row != nil) ? [column! + 1, row! + 1] : NSNull()
+        let tilePos: Any =
+            frame != nil ? [Double(frame!.origin.x), Double(frame!.origin.y)] : NSNull()
+        entry["layout"] = [
+            "pos_in_scrolling_layout": pos,
+            "tile_size": [Double(frame?.width ?? 0), Double(frame?.height ?? 0)],
+            "window_size": [Int(frame?.width ?? 0), Int(frame?.height ?? 0)],
+            "tile_pos_in_workspace_view": tilePos,
+            "window_offset_in_tile": [0.0, 0.0],
+        ]
         return entry
     }
 
@@ -441,6 +459,12 @@ extension TilingEngine {
         msgServer.broadcast(jsonLine(["OverviewOpenedOrClosed": ["is_open": open]]))
     }
 
+    // niri broadcasts ConfigLoaded on every reload attempt, success or
+    // failure (src/ipc/server.rs).
+    func emitConfigLoaded() {
+        msgServer.broadcast(jsonLine(["ConfigLoaded": ["failed": configLoadFailed]]))
+    }
+
     // The whole current state as a list of the same event lines a subscriber
     // would have received to reach it: every workspace, every window, the
     // focused window, the overview flag. Replayed once to each new event-stream
@@ -465,6 +489,11 @@ extension TilingEngine {
 
     func currentStateLines() -> [String] {
         var lines: [String] = []
+        // niri: "You will always receive this event when connecting to the
+        // event stream, indicating the last config load attempt"
+        // (niri-ipc/src/lib.rs, Event::ConfigLoaded). Clients that wait for
+        // it before rendering hung forever without it.
+        lines.append(jsonLine(["ConfigLoaded": ["failed": configLoadFailed]]))
         lines.append(jsonLine(["WorkspacesChanged": ["workspaces": niriWorkspaces()]]))
         // niri seeds a new subscriber with ONE bulk WindowsChanged, not a
         // window-by-window replay - the bulk is also the only sane way for a

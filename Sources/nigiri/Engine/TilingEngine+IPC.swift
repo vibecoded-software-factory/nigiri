@@ -19,6 +19,12 @@ extension TilingEngine {
         var entry: [String: Any] = [
             "id": Int(w.id),
             "title": w.title,
+            // The one field scripts genuinely could not get any other way:
+            // matching a window to its app by title alone is guesswork
+            // (suffered live while testing a window rule against the AWS
+            // VPN Client). Additive - the legacy shape's existing names
+            // stay as they are.
+            "app_id": NSRunningApplication(processIdentifier: w.pid)?.bundleIdentifier ?? "",
             "pid": Int(w.pid),
             "workspace": workspaceIndex + 1,
             "floating": floating,

@@ -284,6 +284,10 @@ final class TilingEngine {
     // Per-workspace active window at last broadcast, for
     // WorkspaceActiveWindowChanged (keyed by workspace id).
     var lastBroadcastActiveWindows: [UInt64: UInt64] = [:]
+    // Whether the last config load attempt failed - what niri's ConfigLoaded
+    // event reports, both on every reload and as the guaranteed first event
+    // a new subscriber receives (niri-ipc/src/lib.rs).
+    var configLoadFailed = false
     // screenshot-path, with strftime placeholders, for the screenshot actions.
     var screenshotPath = "~/Desktop/Screenshot %Y-%m-%d %H.%M.%S.png"
     let overviewChrome = OverviewChrome()
@@ -1051,7 +1055,9 @@ final class TilingEngine {
         }
 
         NigiriConfig.writeDefaultIfMissing()
-        let initialConfig = NigiriConfig.load() ?? NigiriConfig()
+        let loadedConfig = NigiriConfig.load()
+        configLoadFailed = loadedConfig == nil
+        let initialConfig = loadedConfig ?? NigiriConfig()
         applyConfig(initialConfig, initial: true)
         // Startup-only, never re-run on reload (niri's semantics: these are
         // session companions, not supervised services).
@@ -1061,10 +1067,15 @@ final class TilingEngine {
         // the watched inode, so it re-arms itself).
         configWatcher.start {
             if let config = NigiriConfig.load() {
+                self.configLoadFailed = false
                 self.applyConfig(config, initial: false)
             } else {
+                self.configLoadFailed = true
                 print("[config] reload failed - keeping the previous configuration")
             }
+            // niri broadcasts ConfigLoaded on every reload attempt, success
+            // or failure.
+            self.emitConfigLoaded()
         }
 
         // niri's request shapes and the older bare-word ones, one entry point.

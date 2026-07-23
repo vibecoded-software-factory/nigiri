@@ -234,6 +234,18 @@ enum SelfTest {
         expectEqual(
             actionLine("{\"Action\":{\"FocusWorkspace\":{\"reference\":{\"Index\":2}}}}"),
             "focus-workspace index=2", "FocusWorkspace by Index carries index=2")
+        // REGRESSION: {"id": N} used to flatten positionally ("close-window
+        // 5"), the handler's kvArg("id") never saw it, and CloseWindow{id}
+        // closed the FOCUSED window instead of window 5.
+        expectEqual(
+            actionLine("{\"Action\":{\"CloseWindow\":{\"id\":5}}}"), "close-window id=5",
+            "CloseWindow carries its target as id=5")
+        expectEqual(
+            actionLine("{\"Action\":{\"CloseWindow\":{}}}"), "close-window",
+            "CloseWindow with no id targets the focused window, like niri")
+        expectEqual(
+            actionLine("{\"Action\":{\"FocusWindow\":{\"id\":7}}}"), "focus-window id=7",
+            "FocusWindow carries its target as id=7")
 
         // --- key combos ----------------------------------------------------
         // REGRESSION: virtual keycodes are physical POSITIONS. On Workman the
