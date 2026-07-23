@@ -89,7 +89,15 @@ enum WindowMover {
         guard AX.isSettable(window, kAXPositionAttribute as String) else {
             throw MoveError.positionNotSettable
         }
-        guard AX.isSettable(window, kAXSizeAttribute as String) else { throw MoveError.sizeNotSettable }
+        // A window whose size is not settable at all (AWS VPN Client's
+        // fixed-size main window) can still be MOVED. niri's semantics:
+        // position always belongs to the compositor, size is a request the
+        // client may refuse - and "not settable" is just the hardest refusal.
+        // Throwing here skipped the position write too, leaving the window
+        // marked tiled but physically wherever macOS opened it. Write the
+        // position, skip the size; the caller's read-back sees the fixed size
+        // and the refusal memo adapts the layout to it like any other refusal.
+        let sizeSettable = AX.isSettable(window, kAXSizeAttribute as String)
 
         var origin = frame.origin
         var size = frame.size
@@ -102,6 +110,7 @@ enum WindowMover {
         // since some apps silently enforce a minimum size regardless.
         let posErr = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posVal)
         guard posErr == .success else { throw MoveError.axFailure(posErr) }
+        guard sizeSettable else { return }
         let sizeErr = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeVal)
         guard sizeErr == .success else { throw MoveError.axFailure(sizeErr) }
     }
