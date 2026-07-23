@@ -801,6 +801,11 @@ extension TilingEngine {
         // overshoot that shrink presses had to pay back.
         let siblingCount = CGFloat(column.windows.count - 1)
         let ceiling = max(20, columnHeight - siblingCount * (ColumnLayoutEngine.gap + 20))
+        // niri: "only one window in the column can be non-auto-height" -
+        // set_window_height converts every sibling back to Auto first
+        // (scrolling.rs, convert_heights_to_auto), their weights keeping
+        // the proportions they had.
+        for w in column.windows where w !== window { w.manualHeightPx = nil }
         window.manualHeightPx = min(ceiling, max(20, requested))
         column.cachedHeights = nil
         reflow()

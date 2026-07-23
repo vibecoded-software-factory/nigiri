@@ -86,13 +86,13 @@ out at phantom sizes (PR #35).
 
 ## P2 - behavioral detail divergences
 
-- [ ] 19. INVENTED: clampProportion caps width to [0.05, 1.0]; niri allows
+- [x] 19. INVENTED: clampProportion caps width to [0.05, 1.0]; niri allows
   proportions above 1.0 (wider than view, left-aligned) with no floor
   (LayoutEngine.swift clampProportion vs scrolling.rs:4860).
-- [ ] 20. INVENTED: post-refusal height redistribution goes flat-equal; niri
+- [x] 20. INVENTED: post-refusal height redistribution goes flat-equal; niri
   keeps weight-proportional shares every iteration (LayoutEngine
   probeTargetHeights vs scrolling.rs:4626-4688).
-- [ ] 21. DIVERGENT: multiple fixed-height windows allowed per column; niri
+- [x] 21. DIVERGENT: multiple fixed-height windows allowed per column; niri
   enforces one non-auto height (convert_heights_to_auto before set), and clamps
   a Fixed height so siblings' minimums fit (scrolling.rs:4946,4492).
 - [ ] 22. DIVERGENT: maximize modeled as per-workspace `maximizedIndex`; niri's
@@ -101,7 +101,7 @@ out at phantom sizes (PR #35).
   maximized column visibly does nothing (Workspace.swift:157, Actions.swift:480).
 - [ ] 23. DIVERGENT: absolute viewOffset in strip coordinates; niri's is
   relative to the active column (keeps it anchored when left columns resize).
-- [ ] 24. MISSING: columns only widen to discovered minimums; niri also
+- [x] 24. MISSING: columns only widen to discovered minimums; niri also
   NARROWS when the client clamps smaller (max-size hints), so undersized
   answers leave a permanent gap. PR #35 covers the fully-fixed case only.
 - [ ] 25. INVENTED defaults: gaps 10 (niri 16), focus-ring purple gradient +
@@ -133,7 +133,7 @@ out at phantom sizes (PR #35).
   hardcoded 0.15s wheel cooldown; niri allows bare wheel binds and rate-limits
   by scroll accumulation (Config.swift:380, MouseDragController.swift:146).
 - [ ] 34. DIVERGENT: `quit` skips niri's default confirmation dialog.
-- [ ] 35. DIVERGENT: activate-prev-column-on-removal restores focus but not the
+- [x] 35. DIVERGENT: activate-prev-column-on-removal restores focus but not the
   remembered view offset (niri restores both). move-column-to-monitor appends
   at end; niri inserts right of the target's active column.
 

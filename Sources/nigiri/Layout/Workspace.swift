@@ -28,6 +28,7 @@ final class Workspace {
         // here it would have cleared the flag one line after insertColumn set
         // it, since insert ends by re-anchoring.
         activatePreviousOnRemoval = false
+        previousViewOffset = nil
         setFocusedIndex(column)
     }
     private func setFocusedIndex(_ index: Int) {
@@ -97,6 +98,13 @@ final class Workspace {
     // B. niri stores the previous view offset there too; we only need the
     // "activate the previous one" half, since the camera follows focus.
     private var activatePreviousOnRemoval: Bool = false
+    // The other half of niri's activate_prev_column_on_removal: the view
+    // offset AS IT WAS before the new column opened, restored with the
+    // focus so the camera lands exactly where the user left it instead of
+    // wherever fitOffset re-derives from the restored focus. Valid with
+    // absolute strip coordinates because the columns LEFT of the restored
+    // focus keep their x when the removed column (to its right) leaves.
+    private var previousViewOffset: CGFloat? = nil
 
     // `activating`: the caller is inserting a column AND focusing it, which
     // is what opening a window does. Passing it here rather than calling
@@ -114,6 +122,7 @@ final class Workspace {
         if activating {
             setFocusedIndex(at)
             activatePreviousOnRemoval = rightOfFocus
+            if rightOfFocus { previousViewOffset = viewOffset }
         }
     }
     func appendColumn(_ column: Column) { insertColumn(column, at: columns.count) }
@@ -132,9 +141,12 @@ final class Workspace {
         if index < focusedIndex {
             focus(column: focusedIndex - 1)
         } else if index == focusedIndex, activatePreviousOnRemoval, index > 0 {
+            let restored = previousViewOffset
             focus(column: index - 1)
+            if let restored { viewOffset = restored }
         }
         activatePreviousOnRemoval = false
+        previousViewOffset = nil
         clampFocus()
         return removed
     }

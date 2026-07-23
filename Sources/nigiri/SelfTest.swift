@@ -1135,9 +1135,16 @@ enum SelfTest {
             ColumnLayoutEngine.clampProportion(0.5, minWidth: 800, maxWidth: 400, usableWidth: usableWidth),
             floorProportion,
             "if ceiling and floor cross, the floor wins: an unreadable window is worse than a wide one")
+        // niri's clamp is (0, 10000) (scrolling.rs, set_column_width): a
+        // proportion past 1.0 is legal - the column grows wider than the
+        // view and the view left-aligns it. The old cap at 1.0 encoded the
+        // invented restriction this replaced (backlog item 19).
         expectEqual(
             ColumnLayoutEngine.clampProportion(2.0, minWidth: nil, maxWidth: nil, usableWidth: usableWidth),
-            1.0, "nothing goes past the usable width")
+            2.0, "a proportion wider than the view passes through, like niri")
+        expectEqual(
+            ColumnLayoutEngine.clampProportion(-0.5, minWidth: nil, maxWidth: nil, usableWidth: usableWidth),
+            0.0, "the floor is zero, not an invented 5%")
 
         // REGRESSION (item 9): move-window-to-workspace put a floating window
         // inside a column of the destination workspace, breaking the invariant
