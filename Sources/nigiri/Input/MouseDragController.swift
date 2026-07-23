@@ -41,7 +41,11 @@ final class MouseDragController {
     // cursor position. Returns true when it was used (the overview panning
     // the strip under the cursor), which consumes the event; anything else
     // passes straight through to the app below, untouched.
-    var onScroll: ((CGFloat, CGFloat, CGPoint) -> Bool)?
+    // (dx, dy, location, continuous). `continuous` distinguishes trackpad /
+    // Magic Mouse pixel scrolling (phase-driven, 1:1 pan material) from a
+    // real mouse wheel's discrete notches - niri gives them different
+    // overview semantics (pan vs workspace switch, input/mod.rs:3206).
+    var onScroll: ((CGFloat, CGFloat, CGPoint, Bool) -> Bool)?
     // Mouse-button binds (niri's MouseMiddle/MouseBack/MouseForward and the
     // modifier'd left/right). Keyed "<mods>-<button>"; returns true when the
     // press was claimed, in which case it is consumed.
@@ -138,7 +142,10 @@ final class MouseDragController {
                 // swipe has to pan by what the fingers actually travelled.
                 let dx = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2))
                 let dy = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
-                if (dx != 0 || dy != 0), onScroll?(dx, dy, event.location) == true { return nil }
+                let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+                if (dx != 0 || dy != 0), onScroll?(dx, dy, event.location, continuous) == true {
+                    return nil
+                }
                 return Unmanaged.passUnretained(event)
             }
             let dy = event.getIntegerValueField(.scrollWheelEventDeltaAxis1)  // vertical

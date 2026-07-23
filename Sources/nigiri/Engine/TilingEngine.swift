@@ -1128,7 +1128,17 @@ final class TilingEngine {
             return true
         }
         mouseDrag.onPlainDrag = { point in self.overviewDragMove(point) }
-        mouseDrag.onScroll = { dx, dy, point in self.overviewPan(dx: dx, dy: dy, at: point) }
+        mouseDrag.onScroll = { dx, dy, point, continuous in
+            // niri's overview scroll semantics (input/mod.rs:3206): a REAL
+            // wheel's unmodified notches switch the focused workspace
+            // (FocusWorkspaceUp/DownUnderMouse); only the trackpad's
+            // continuous 1:1 scroll pans the row. The pan-on-wheel was
+            // invented ("there is nothing else for it to do" - there was).
+            if !continuous {
+                return self.overviewWheelWorkspaceSwitch(dy: dy)
+            }
+            return self.overviewPan(dx: dx, dy: dy, at: point)
+        }
         mouseDrag.onPlainUp = { point in self.overviewDragEnd(point) }
         mouseDrag.onBegin = { point, _ in
             guard !self.isTransitioningWorkspace, !self.isOverviewActive, self.modDrag == nil,

@@ -109,7 +109,7 @@ out at phantom sizes (PR #35).
   with gaps/radius/colors niri doesn't have (niri: left, 0, 0, derived from
   focus-ring), spring stiffness 2200 (niri defaults 800/1000) - the user's
   personal config baked in as the built-in defaults.
-- [ ] 26. INVENTED: overview plain wheel pans the hovered row; niri maps
+- [x] 26. INVENTED: overview plain wheel pans the hovered row; niri maps
   unmodified wheel to FocusWorkspaceUp/DownUnderMouse (workspace switching)
   (TilingEngine+Overview.swift:806 vs input/mod.rs:3206).
 - [ ] 27. DIVERGENT: overview insert hint drawn as 14px bars; niri renders a
@@ -126,7 +126,7 @@ out at phantom sizes (PR #35).
 - [ ] 31. DIVERGENT: new floating windows keep macOS placement; niri centers
   them (floating.rs:449). Re-floated windows: niri restores the stored float
   position; nigiri always re-offsets +50,+50.
-- [ ] 32. DIVERGENT: overview empty-space click closes without switching; niri
+- [x] 32. DIVERGENT: overview empty-space click closes without switching; niri
   switches to the workspace under the cursor. Card chrome (border/plate/
   padding) and "Workspace N" chips in the macOS-13 fallback are nigiri styling.
 - [ ] 33. INVENTED: unmodified wheel binds silently promoted to Mod, plus a
