@@ -14,19 +14,20 @@ out at phantom sizes (PR #35).
 
 ## P0 - breaks clients or hurts daily use
 
-- [ ] 1. INVENTED IPC: `{"Action":{"CloseWindow":{"id":N}}}` ignores the id and
+- [x] 1. INVENTED IPC: `{"Action":{"CloseWindow":{"id":N}}}` ignores the id and
   closes the FOCUSED window (NiriProtocol.swift:96-110 flattens to a line,
   Dispatch.swift:249 only reads `id=` form). `FocusWindow{id}` lands on
   unknown-action. niri clients mis-target real windows.
-- [ ] 2. INVENTED IPC: `Window.layout` reuses niri's field name for a screen
+- [x] 2. INVENTED IPC: `Window.layout` reuses niri's field name for a screen
   rect; niri's is {pos_in_scrolling_layout, tile_size, window_size, ...}
   (niri-ipc/lib.rs:1399). Plus invented top-level 0-based `column`/`row`.
-- [ ] 3. MISSING IPC: `ConfigLoaded` event is guaranteed by niri on every
-  subscribe (lib.rs:1706); clients waiting for it hang. Also missing:
-  urgency/window-layouts/focus-timestamp/keyboard-layout events.
-- [ ] 4. INVENTED IPC: event-stream subscribe answers `{"event":"subscribed"}`;
+- [x] 3. MISSING IPC: `ConfigLoaded` event is guaranteed by niri on every
+  subscribe (lib.rs:1706); clients waiting for it hang. (Remaining missing
+  events - urgency/window-layouts/focus-timestamp/keyboard-layout - tracked
+  under item 38.)
+- [x] 4. INVENTED IPC: event-stream subscribe answers `{"event":"subscribed"}`;
   niri answers `{"Ok":"Handled"}` then streams (MsgServer.swift:107).
-- [ ] 5. DIVERGENT CLI: legacy `nigiri msg windows` shape has no `app_id`,
+- [x] 5. DIVERGENT CLI: legacy `nigiri msg windows` shape has no `app_id`,
   1-based `workspace`, `focused`/`floating`/`frame` names. Verified live while
   debugging the AWS VPN rule: matching by app id was impossible from the CLI.
 - [ ] 6. INVENTED: decorations animate toward spring-interpolated LAYOUT
