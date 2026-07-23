@@ -66,22 +66,35 @@ extension TilingEngine {
             // Never our own windows: the ring, the borders, the overview panel
             // and the close ghosts are all accessory windows of this process.
             if isAccessory, app.processIdentifier == ProcessInfo.processInfo.processIdentifier { continue }
-            // macOS's system UI agents (Control Center, the Bluetooth
-            // connection dialogs, Notification Center, the Dock...) put real
-            // AXWindows on screen for things that are not windows at all -
-            // niri never sees these because in Wayland they would be
-            // layer-shell surfaces, not toplevels. activationPolicy is not
-            // enough: BluetoothUIServer reports .regular while its dialog is
-            // up, which is how a "Bluetooth" card ended up as a column.
+            // Pure-chrome system UI agents (Control Center, Notification
+            // Center, the Dock...) put AXWindows on screen for things that are
+            // not windows at all - niri never sees these because in Wayland
+            // they would be layer-shell surfaces, not toplevels. Skip them
+            // outright.
             if let bundleID = app.bundleIdentifier,
                 Self.systemUIAgentBundleIDs.contains(where: { bundleID.hasPrefix($0) })
             {
                 debugLog("[collect] skip \(app.localizedName ?? "?"): system UI agent (\(bundleID))")
                 continue
             }
+            // Dialog-producing system agents (Bluetooth connection/pairing
+            // request, location prompt, system alerts, quarantine warning)
+            // report .regular but their window is a real dialog the user must
+            // act on. Observe them and force their windows floating, exactly
+            // like the .accessory prompt path - never tiled, the same layer
+            // niri gives a dialog.
+            let isDialogAgent =
+                (app.bundleIdentifier.map { id in
+                    Self.dialogAgentBundleIDs.contains(where: { id.hasPrefix($0) })
+                }) ?? false
+            // Everything below that forces a window into the floating layer
+            // and holds it to the dialog-like test applies to both accessory
+            // apps and these .regular dialog agents.
+            let forceFloating = isAccessory || isDialogAgent
             guard let name = app.localizedName,
                 !neverTile.contains(where: { name.localizedCaseInsensitiveContains($0) }),
-                tileAll || watchedAppNames.contains(where: { name.localizedCaseInsensitiveContains($0) })
+                tileAll || forceFloating
+                    || watchedAppNames.contains(where: { name.localizedCaseInsensitiveContains($0) })
             else {
                 debugLog(
                     "[collect] skip pid \(app.processIdentifier) (\(app.localizedName ?? "?")): not watched / never-tile"
@@ -107,8 +120,8 @@ extension TilingEngine {
                     debugLog("[collect] skip \(name) window: above normal level (panel/layer surface)")
                     continue
                 }
-                if isAccessory, !Self.dialogLikeAccessoryWindow(w) {
-                    debugLog("[collect] skip accessory window of \(name): doesn't look like a dialog")
+                if forceFloating, !Self.dialogLikeAccessoryWindow(w) {
+                    debugLog("[collect] skip floating-agent window of \(name): doesn't look like a dialog")
                     continue
                 }
                 // Fast path for a window already in the model: its subrole,
@@ -124,7 +137,7 @@ extension TilingEngine {
                     result.append(
                         (
                             w, app.processIdentifier, title.isEmpty ? known.title : title,
-                            (isAccessory || known.isDialog) ? .dialog : .tiled
+                            (forceFloating || known.isDialog) ? .dialog : .tiled
                         ))
                     watcher.watchForDestruction(w, pid: app.processIdentifier)
                     continue
@@ -144,7 +157,12 @@ extension TilingEngine {
                 let nonTileableSubroles: Set<String> = [
                     kAXFloatingWindowSubrole, kAXSystemFloatingWindowSubrole, kAXSystemDialogSubrole,
                 ]
-                if let subrole, nonTileableSubroles.contains(subrole) {
+                // The deny-list filters transient popovers from ordinary apps
+                // (a Font panel). For a forced-floating prompt these same
+                // subroles - AXSystemDialog especially - are exactly the
+                // dialog we want, and it already passed the dialog-like test
+                // above, so let it through to the floating adoption below.
+                if !forceFloating, let subrole, nonTileableSubroles.contains(subrole) {
                     debugLog("[collect] skip \(name) window: transient subrole \(subrole)")
                     continue
                 }
@@ -161,9 +179,10 @@ extension TilingEngine {
                 // adopt/close loop) which must stay excluded entirely.
                 let hasCloseButton = AX.hasAttribute(w, kAXCloseButtonAttribute as String)
 
-                // An accessory app's window never gets tiled, whatever shape
-                // it has: it is a prompt, not a place to work.
-                if isAccessory {
+                // A prompt window - from an accessory app or a .regular
+                // dialog agent - never gets tiled, whatever shape it has: it
+                // is something to act on, not a place to work.
+                if forceFloating {
                     let title: String = AX.attribute(w, kAXTitleAttribute as String) ?? ""
                     result.append((w, app.processIdentifier, title.isEmpty ? (name) : title, .dialog))
                     watcher.watchForDestruction(w, pid: app.processIdentifier)
