@@ -128,18 +128,16 @@ extension NigiriConfig {
 
         // spawn-at-startup "open" "-a" "Discord"
 
-        window-rule {
-            match app-id="AWS VPN Client"
-            open-floating false
-            // open-on-workspace 2
-            // open-maximized true
-        }
-
-        window-rule {
-            match title="Picture-in-Picture"
-            match title="Picture in Picture"
-            open-floating true
-        }
+        // Window rules match by app-id (bundle id or app name) and/or title.
+        // App-specific rules belong in YOUR config, not here - when DMS is in
+        // use it manages its own via `include "dms/windowrules.kdl"`. Example:
+        //
+        // window-rule {
+        //     match app-id="com.example.app"
+        //     open-floating true
+        //     // open-on-workspace 2
+        //     // open-maximized true
+        // }
 
         binds {
             Mod+Left  { focus-column-left; }
