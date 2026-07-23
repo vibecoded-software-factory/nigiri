@@ -83,6 +83,28 @@ enum SelfTest {
             usableWidth: usableWidth, maximizedIndex: 1)
         expectEqual(maxed[1].width, usableWidth, "the maximized column takes the whole usable width")
 
+        // niri's update_tile_sizes_with_transaction clamp: a fixed-size tile
+        // (AX: size not settable, min == max) resolves its column to EXACTLY
+        // its own width, whatever proportion was requested. REGRESSION: the
+        // clamp only had the floor half, so a rule-tiled AWS VPN Client kept
+        // a phantom 720px column around a 440px window and every decoration
+        // animated toward frames that never matched reality.
+        let fixedCol = column(0.5)
+        let fixedWin = window()
+        fixedWin.fixedSize = CGSize(width: 440, height: 388)
+        fixedCol.setWindows([fixedWin])
+        let fixedPlacements = ColumnLayoutEngine.columnPlacements(
+            columns: [fixedCol, column(0.5)],
+            usableWidth: usableWidth, maximizedIndex: nil)
+        expectEqual(fixedPlacements[0].width, 440, "a fixed-size window resolves its column to its own width")
+        expectEqual(fixedPlacements[1].x, 450, "and the next column packs against the clamped width")
+        expectEqual(
+            ColumnLayoutEngine.naiveHeights(for: [fixedWin], usableHeight: 892)[0], 388,
+            "an exact size constraint fixes the height like set-window-height")
+        let maxedFixed = ColumnLayoutEngine.columnPlacements(
+            columns: [fixedCol], usableWidth: usableWidth, maximizedIndex: 0)
+        expectEqual(maxedFixed[0].width, 440, "maximize cannot outgrow a fixed-size window either")
+
         // REGRESSION: four sites inverted the width with a different,
         // count-dependent formula, so a column's floor moved when an
         // unrelated column opened.
