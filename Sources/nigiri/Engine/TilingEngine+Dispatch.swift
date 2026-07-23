@@ -390,6 +390,11 @@ extension TilingEngine {
         gestureFourRight = config.gestureFourRight
         gestureFourUp = config.gestureFourUp
         gestureFourDown = config.gestureFourDown
+        hotCornersOff = config.hotCornersOff
+        hotCornerTopLeft = config.hotCornerTopLeft
+        hotCornerTopRight = config.hotCornerTopRight
+        hotCornerBottomLeft = config.hotCornerBottomLeft
+        hotCornerBottomRight = config.hotCornerBottomRight
         gestureMouseOne = config.gestureMouseOne
         gestureMouseTwo = config.gestureMouseTwo
         MouseDragController.modMask = config.modKey
@@ -417,7 +422,7 @@ extension TilingEngine {
             let action = bind.action
             let combo = bind.combo
             let cooldown = bind.cooldownMs
-            listener.register(bind.keyCode, modifiers: bind.modifiers) {
+            listener.register(bind.keyCode, modifiers: bind.modifiers, repeats: bind.repeats) {
                 // niri's cooldown-ms: rate-limit repeat firings of this bind.
                 if let cooldown {
                     let now = Date()
