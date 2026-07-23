@@ -75,7 +75,10 @@ extension TilingEngine {
         if name == "workspace-switch", let group = configuredAnimations["window-movement"] {
             return scaled(group)
         }
-        return .spring(Spring(stiffness: 2200))
+        // niri's default spring: damping-ratio 1, stiffness 800 for
+        // window-movement/resize/overview (animations.rs:145). 2200 was
+        // "2x the user's 1100" - personal config baked in as the default.
+        return .spring(Spring(stiffness: 800))
     }
 
     // niri's animations { slowdown }: stretches every duration.

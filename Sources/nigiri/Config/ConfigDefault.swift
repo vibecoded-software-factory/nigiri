@@ -20,7 +20,7 @@ extension NigiriConfig {
         // Page_Up/Page_Down, 0-9, a-z, F1-F20, Slash, Comma, Minus, ...
 
         layout {
-            gaps 10
+            gaps 16
 
             center-focused-column "never"
 
@@ -62,7 +62,7 @@ extension NigiriConfig {
 
             focus-ring {
                 width 4
-                active-gradient from="#7355a6" to="#cba6f7" angle=45
+                active-color "#7fc8ff"
             }
 
             // Border for the NON-focused windows (the focused one gets the ring):

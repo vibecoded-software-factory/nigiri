@@ -16,14 +16,16 @@ final class TabIndicators {
 
     static let gap: CGFloat = 5
     static let width: CGFloat = 4
-    static let gapBetweenTabs: CGFloat = 2
-    static let cornerRadius: CGFloat = 8
+    // niri defaults (appearance.rs TabIndicator): gaps-between-tabs 0,
+    // corner-radius 0. The old 2/8 were invented styling.
+    static let gapBetweenTabs: CGFloat = 0
+    static let cornerRadius: CGFloat = 0
     static let lengthProportion: CGFloat = 0.5
 
     private var activeColor: NSColor = NSColor(
-        calibratedRed: 0xcb / 255.0, green: 0xa6 / 255.0, blue: 0xf7 / 255.0, alpha: 1)
+        calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1)
     private var inactiveColor: NSColor = NSColor(
-        calibratedRed: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x3a / 255.0, alpha: 1)
+        calibratedRed: 80 / 255.0, green: 80 / 255.0, blue: 80 / 255.0, alpha: 1)
 
     // layout { tab-indicator { active-gradient / inactive-color } }
     func applyStyle(active: NSColor, inactive: NSColor) {
@@ -39,8 +41,11 @@ final class TabIndicators {
             guard i < bars.count, bars[i].count > 0 else { overlay.orderOut(nil); continue }
             let bar = bars[i]
             let stripHeight = bar.frame.height * Self.lengthProportion
+            // niri's default position is LEFT of the column
+            // (appearance.rs:488, TabIndicatorPosition::Left); the right-
+            // side placement was invented styling.
             let strip = CGRect(
-                x: bar.frame.maxX + Self.gap,
+                x: bar.frame.minX - Self.gap - Self.width,
                 y: bar.frame.midY - stripHeight / 2,
                 width: Self.width,
                 height: stripHeight)
