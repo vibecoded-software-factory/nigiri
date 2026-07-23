@@ -390,6 +390,11 @@ extension TilingEngine {
         gestureFourRight = config.gestureFourRight
         gestureFourUp = config.gestureFourUp
         gestureFourDown = config.gestureFourDown
+        hotCornersOff = config.hotCornersOff
+        hotCornerTopLeft = config.hotCornerTopLeft
+        hotCornerTopRight = config.hotCornerTopRight
+        hotCornerBottomLeft = config.hotCornerBottomLeft
+        hotCornerBottomRight = config.hotCornerBottomRight
         gestureMouseOne = config.gestureMouseOne
         gestureMouseTwo = config.gestureMouseTwo
         MouseDragController.modMask = config.modKey

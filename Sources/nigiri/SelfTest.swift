@@ -312,6 +312,38 @@ enum SelfTest {
             NigiriConfig.parseCombo("Hyper+F19")?.1 == [.command, .option, .control, .shift],
             "Hyper is all four")
         expect(NigiriConfig.parseCombo("Garbage+A") == nil, "a nonexistent modifier is rejected")
+
+        // --- spawns, gestures blocks, hot corners --------------------------
+        // niri's spawn-at-startup is argv (misc.rs): quoting must survive,
+        // and an unknown BLOCK inside gestures{} must be skipped as a block
+        // (consumed as statements it corrupted everything after it).
+        let spawnConfig = NigiriConfig.parse(
+            """
+            spawn-at-startup "open" "-a" "Google Chrome"
+            spawn-sh-at-startup "sleep 1 && open -a Music"
+            gestures {
+                hot-corners {
+                    top-right
+                }
+                dnd-edge-view-scroll {
+                    trigger-width 30
+                }
+            }
+            layout {
+                gaps 33
+            }
+            """)
+        expectEqual(
+            spawnConfig.spawnAtStartup.first ?? [], ["open", "-a", "Google Chrome"],
+            "spawn-at-startup keeps its argv - a quoted app name stays one arg")
+        expectEqual(
+            spawnConfig.spawnShAtStartup.first ?? "", "sleep 1 && open -a Music",
+            "spawn-sh-at-startup carries the whole line for the shell")
+        expect(spawnConfig.hotCornerTopRight, "hot-corners top-right parses")
+        expect(!spawnConfig.hotCornersOff, "hot corners stay enabled unless `off`")
+        expectEqual(
+            Double(spawnConfig.gap), 33,
+            "an unknown gestures block does not corrupt the sections after it")
         expectEqual(
             NigiriConfig.wheelBindingKey(for: "Mod+WheelScrollDown") ?? "", "mod-down",
             "niri's wheel binds are accepted")

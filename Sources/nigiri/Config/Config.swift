@@ -151,8 +151,19 @@ struct NigiriConfig {
     // niri's input section, the parts with an AX-world equivalent.
     var focusFollowsMouse: Bool = false
     var warpMouseToFocus: Bool = false
-    // niri's spawn-at-startup - run once at launch, never on reload.
-    var spawnAtStartup: [String] = []
+    // niri's spawn-at-startup - argv, no shell (misc.rs). Run once at
+    // launch, never on reload.
+    var spawnAtStartup: [[String]] = []
+    // niri's spawn-sh-at-startup - the whole line through a shell.
+    var spawnShAtStartup: [String] = []
+    // niri's gestures { hot-corners {} }: 1x1 screen corners that toggle
+    // the overview. Explicit corners win; top-left is the default when
+    // none is set; `off` disables them all (niri.rs, is_inside_hot_corner).
+    var hotCornersOff = false
+    var hotCornerTopLeft = false
+    var hotCornerTopRight = false
+    var hotCornerBottomLeft = false
+    var hotCornerBottomRight = false
     // niri's named workspaces, in declaration order: `workspace "chat"`.
     // Pre-created 1..N at those positions so focus/move/open-on-workspace
     // can target them by name.
