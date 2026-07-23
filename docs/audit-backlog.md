@@ -95,7 +95,9 @@ out at phantom sizes (PR #35).
 - [ ] 21. DIVERGENT: multiple fixed-height windows allowed per column; niri
   enforces one non-auto height (convert_heights_to_auto before set), and clamps
   a Fixed height so siblings' minimums fit (scrolling.rs:4946,4492).
-- [ ] 22. DIVERGENT: maximize modeled as per-workspace `maximizedIndex`; niri's
+- [~] 22. PARTIAL: width actions now clear the maximize (the user-visible
+  bug); the per-column is_full_width model (several columns full-width at
+  once) remains queued. Original: maximize modeled as per-workspace `maximizedIndex`; niri's
   `is_full_width` is a per-column flag (several can be full-width), and
   set/toggle width CLEARS it - nigiri's width actions don't, so resizing a
   maximized column visibly does nothing (Workspace.swift:157, Actions.swift:480).
@@ -123,16 +125,16 @@ out at phantom sizes (PR #35).
   has a distinct resize crossfade).
 - [ ] 30. MISSING: with `border` enabled niri draws on EVERY window (active/
   inactive/urgent, gradients); nigiri strokes non-focused only, single color.
-- [ ] 31. DIVERGENT: new floating windows keep macOS placement; niri centers
+- [x] 31. DIVERGENT: new floating windows keep macOS placement; niri centers
   them (floating.rs:449). Re-floated windows: niri restores the stored float
   position; nigiri always re-offsets +50,+50.
 - [ ] 32. DIVERGENT: overview empty-space click closes without switching; niri
   switches to the workspace under the cursor. Card chrome (border/plate/
   padding) and "Workspace N" chips in the macOS-13 fallback are nigiri styling.
-- [ ] 33. INVENTED: unmodified wheel binds silently promoted to Mod, plus a
+- [x] 33. INVENTED: unmodified wheel binds silently promoted to Mod, plus a
   hardcoded 0.15s wheel cooldown; niri allows bare wheel binds and rate-limits
   by scroll accumulation (Config.swift:380, MouseDragController.swift:146).
-- [ ] 34. DIVERGENT: `quit` skips niri's default confirmation dialog.
+- [x] 34. DIVERGENT: `quit` skips niri's default confirmation dialog.
 - [ ] 35. DIVERGENT: activate-prev-column-on-removal restores focus but not the
   remembered view offset (niri restores both). move-column-to-monitor appends
   at end; niri inserts right of the target's active column.
@@ -162,7 +164,7 @@ out at phantom sizes (PR #35).
   a documented nigiri extension (Magic Mouse has no niri counterpart), but
   they live inside niri's OWN config namespace, which real niri rejects -
   they need a nigiri-specific home (separate file or env-gated include).
-- [ ] 43. INVENTED-ADJACENT (same class as item 9): a top-level block with an
+- [x] 43. INVENTED-ADJACENT (same class as item 9): a top-level block with an
   argument before the brace (niri's `output "name" { }`) is not recognized as
   a block - the `{` and its contents parse as top-level lines (seen live:
   "unknown top-level line: output" then "{"). Needs the same skip-as-block

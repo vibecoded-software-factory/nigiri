@@ -307,6 +307,23 @@ extension TilingEngine {
         case "screenshot-screen": takeScreenshot(.screen)
         case "screenshot-window": takeScreenshot(.window)
         case "quit":
+            // niri prompts before quitting unless skip-confirmation
+            // (binds.rs, Quit { skip_confirmation }); this exited
+            // unconditionally - one mistyped bind away from dropping the
+            // whole session's layout.
+            let skip = parts.contains { $0 == "skip-confirmation=true" || $0 == "--skip-confirmation" }
+            if !skip {
+                let alert = NSAlert()
+                alert.messageText = "Quit nigiri?"
+                alert.informativeText = "The window layout will be released."
+                alert.addButton(withTitle: "Quit")
+                alert.addButton(withTitle: "Cancel")
+                NSApp.activate(ignoringOtherApps: true)
+                guard alert.runModal() == .alertFirstButtonReturn else {
+                    print("quit: cancelled")
+                    return
+                }
+            }
             print("quit: restoring stashed windows and exiting")
             restoreStashedWindows()
             exit(0)

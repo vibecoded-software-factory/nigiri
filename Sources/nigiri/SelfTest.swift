@@ -884,8 +884,8 @@ enum SelfTest {
             NigiriConfig.bindingKey(mods: ["shift", "ctrl", "mod"], suffix: "down"), "mod-ctrl-shift-down",
             "fixed order: mod, cmd, opt, ctrl, shift")
         expectEqual(
-            NigiriConfig.wheelBindingKey(for: "WheelScrollUp") ?? "", "mod-up",
-            "a wheel with no modifier reads as Mod (a bare wheel is just scrolling)")
+            NigiriConfig.wheelBindingKey(for: "WheelScrollUp") ?? "", "up",
+            "a bare wheel bind stays bare - niri allows unmodified wheel binds")
 
         // The wheel{} section is written with the internal key by hand, which is
         // exactly where a different order sneaks in: it gets canonicalized too.

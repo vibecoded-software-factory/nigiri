@@ -1234,9 +1234,10 @@ final class TilingEngine {
                 // Logged like the button path: a wheel bind that never fires is
                 // otherwise indistinguishable from a wheel that reports nothing.
                 debugLog("[mouse] wheel \(key) has no bind")
-                return
+                return false
             }
             self.performAction(action)
+            return true
         }
         // Mouse buttons bound in the config (niri's Mod+MouseMiddle and
         // friends). Returns whether the press was claimed, so an unbound button

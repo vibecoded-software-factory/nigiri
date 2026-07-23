@@ -1016,7 +1016,21 @@ extension NigiriConfig {
                 if next() == "{" {
                     i += 1; skipUnknownBlock(named: t, context: "top-level section")
                 } else {
-                    print("[config] unknown top-level line: \(t)"); _ = statement(firstToken: t)
+                    // A section with arguments before its brace - niri's
+                    // `output "name" { ... }` - eats the argument line as a
+                    // statement, but the block still has to be skipped AS A
+                    // BLOCK: parsed as top-level lines, its children spilled
+                    // into the config (seen live with outputs.kdl - the same
+                    // corruption class as the gestures fix).
+                    let parts = statement(firstToken: t)
+                    if parts.last == "{" {
+                        skipUnknownBlock(named: t, context: "top-level section")
+                    } else if next() == "{" {
+                        i += 1
+                        skipUnknownBlock(named: t, context: "top-level section")
+                    } else {
+                        print("[config] unknown top-level line: \(t)")
+                    }
                 }
             }
         }

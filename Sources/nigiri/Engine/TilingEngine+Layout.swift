@@ -745,6 +745,19 @@ extension TilingEngine {
                     // that in the model so the ring lands on it immediately.
                     workspace.focus(floating: workspace.floatingWindows.count - 1)
                     workspace.isFloatingActive = true
+                    // niri centers a newly floating window with no stored
+                    // position and no rule (floating.rs:449,
+                    // center_preferring_top_left_in_area); macOS's own
+                    // placement is wherever the app asked, which niri never
+                    // honors. Rule positions are applied by applyOpenState.
+                    if rule?.defaultFloatingPosition == nil, window.positionSettable,
+                        let f = WindowMover.currentFrame(element)
+                    {
+                        let wa = usableScreen().frame
+                        let centered = CGPoint(
+                            x: wa.midX - f.width / 2, y: wa.midY - f.height / 2)
+                        try? WindowMover.setPosition(element, to: centered)
+                    }
                 }
                 applyOpenState()
             } else {

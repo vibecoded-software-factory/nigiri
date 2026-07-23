@@ -478,6 +478,8 @@ extension TilingEngine {
     // would loop forever on the first preset and never reach the ones the
     // column can actually take.
     func switchPresetColumnWidth(delta: Int = 1) {
+        // niri clears is_full_width on toggle_width too (scrolling.rs:4906).
+        if workspace.maximizedIndex == workspace.focusedIndex { workspace.maximizedIndex = nil }
         guard let column = focusedColumn() else { return }
         let knownFloor = column.validMinWidth
         ColumnLayoutEngine.newEpoch()
@@ -747,6 +749,10 @@ extension TilingEngine {
     // captured the floor before doing so and hands it in, since by now the
     // column itself can only answer nil.
     func setColumnWidth(_ change: SizeChange, knownFloor: CGFloat? = nil) {
+        // niri clears is_full_width on set_column_width (scrolling.rs:4906):
+        // resizing a maximized column used to visibly do nothing, since the
+        // maximize override kept winning.
+        if workspace.maximizedIndex == workspace.focusedIndex { workspace.maximizedIndex = nil }
         guard let column = focusedColumn() else { return }
         // The user asking for a width IS the signal to re-measure: the app
         // may well answer differently than it did the last time. The floor
@@ -915,6 +921,9 @@ extension TilingEngine {
             // clamps its column to the fixed size (see ManagedWindow
             // .fixedSize), exactly like niri bending to the client.
             let window = workspace.floatingWindows.remove(at: workspace.floatingFocusedIndex)
+            // niri remembers the float position across the round-trip
+            // (floating.rs, stored_or_default_tile_pos).
+            window.lastFloatingFrame = WindowMover.currentFrame(window.axElement)
             workspace.focus(floating: workspace.floatingFocusedIndex)
             let newColumn = Column()
             newColumn.setWindows([window])
@@ -938,11 +947,13 @@ extension TilingEngine {
             let window = column.windows[column.focusedWindowIndex]
             // One operation, with the fullscreen invariant inside it.
             workspace.detachFromTiling(window)
-            // Default floating position: current tiled frame + (50,50),
-            // clamped to stay on screen - matches niri's own default offset
-            // (center-focused-column "never" always uses +50,+50, never the
-            // (0,0) alternative reserved for "always" mode).
-            if let currentFrame = WindowMover.currentFrame(window.axElement) {
+            // niri's stored_or_default_tile_pos (floating.rs): a window
+            // that floated before goes back exactly there; only a first
+            // float gets the default current frame + (50,50), clamped on
+            // screen.
+            if let stored = window.lastFloatingFrame {
+                _ = ColumnLayoutEngine.applyFrame(window, target: stored)
+            } else if let currentFrame = WindowMover.currentFrame(window.axElement) {
                 let screenFrame = currentRawScreenFrame()
                 var newOrigin = CGPoint(x: currentFrame.origin.x + 50, y: currentFrame.origin.y + 50)
                 newOrigin.x = min(newOrigin.x, screenFrame.maxX - currentFrame.width)

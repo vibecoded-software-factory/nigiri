@@ -405,9 +405,10 @@ struct NigiriConfig {
             )
             mods.subtract(ignored)
         }
-        // niri has no unmodified wheel binds (a bare wheel is scrolling), so a
-        // combo without Mod is read as meaning it.
-        mods.insert("mod")
+        // niri allows genuinely unmodified wheel binds (binds.rs: any
+        // modifier set, including none) - a bare WheelScrollDown eats
+        // scrolling everywhere, which is the user's own call, exactly as
+        // upstream. The silent promotion to Mod rewrote that intent.
         return bindingKey(mods: mods, suffix: direction)
     }
 

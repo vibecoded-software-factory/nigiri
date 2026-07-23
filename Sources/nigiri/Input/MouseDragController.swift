@@ -36,7 +36,9 @@ final class MouseDragController {
     // scroll, which macOS consumes upstream - verified). Fires with a key
     // like "mod-down"/"mod-ctrl-left" while Mod (Cmd+Opt) is held; the
     // scroll is consumed so the app under the cursor doesn't also scroll.
-    var onWheel: ((String) -> Void)?
+    // Returns whether a bind consumed the wheel event - a scroll with no
+    // matching bind must keep scrolling the app under the cursor.
+    var onWheel: ((String) -> Bool)?
     // A wheel/two-finger scroll with NO modifier, in pixel deltas plus the
     // cursor position. Returns true when it was used (the overview panning
     // the strip under the cursor), which consumes the event; anything else
@@ -133,25 +135,38 @@ final class MouseDragController {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         case .scrollWheel:
-            guard Self.modHeld(event.flags) else {
-                // Pixel deltas, not the notch count: a trackpad/Magic Mouse
-                // swipe has to pan by what the fingers actually travelled.
-                let dx = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2))
-                let dy = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
-                if (dx != 0 || dy != 0), onScroll?(dx, dy, event.location) == true { return nil }
-                return Unmanaged.passUnretained(event)
-            }
-            let dy = event.getIntegerValueField(.scrollWheelEventDeltaAxis1)  // vertical
-            let dx = event.getIntegerValueField(.scrollWheelEventDeltaAxis2)  // horizontal
-            if dx != 0 || dy != 0, Date().timeIntervalSince(lastWheelFire) > 0.15 {
-                lastWheelFire = Date()
-                var mods: Set<String> = ["mod"]
+            // Wheel binds first, with the REAL modifier set - niri allows
+            // unmodified wheel binds (binds.rs), so a bare bind is reachable
+            // and only consumes the event when it actually fires. The 0.15s
+            // stamp is a momentum guard, not niri semantics: macOS inertial
+            // scrolling keeps emitting events after the flick, and without
+            // it one flick fired a workspace switch a dozen times. Stamped
+            // only when a bind fires, so it never delays ordinary scrolling.
+            let notchY = event.getIntegerValueField(.scrollWheelEventDeltaAxis1)  // vertical
+            let notchX = event.getIntegerValueField(.scrollWheelEventDeltaAxis2)  // horizontal
+            if notchX != 0 || notchY != 0, Date().timeIntervalSince(lastWheelFire) > 0.15 {
+                var mods: Set<String> = []
+                if Self.modHeld(event.flags) { mods.insert("mod") }
                 if event.flags.contains(.maskControl) { mods.insert("ctrl") }
                 if event.flags.contains(.maskShift) { mods.insert("shift") }
-                let dir = abs(dy) >= abs(dx) ? (dy > 0 ? "up" : "down") : (dx > 0 ? "right" : "left")
-                onWheel?(NigiriConfig.bindingKey(mods: mods, suffix: dir))
+                let dir =
+                    abs(notchY) >= abs(notchX)
+                    ? (notchY > 0 ? "up" : "down") : (notchX > 0 ? "right" : "left")
+                if onWheel?(NigiriConfig.bindingKey(mods: mods, suffix: dir)) == true {
+                    lastWheelFire = Date()
+                    return nil
+                }
             }
-            return nil  // consumed while Mod is held
+            // Mod-held scrolls are always consumed (they belong to the drag
+            // layer, bound or not); everything else falls through to the
+            // gesture pan or the app under the cursor.
+            if Self.modHeld(event.flags) { return nil }
+            // Pixel deltas, not the notch count: a trackpad/Magic Mouse
+            // swipe has to pan by what the fingers actually travelled.
+            let dx = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2))
+            let dy = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
+            if (dx != 0 || dy != 0), onScroll?(dx, dy, event.location) == true { return nil }
+            return Unmanaged.passUnretained(event)
         case .otherMouseDown:
             // Buttons 2+ : middle, then back/forward on the usual mice.
             let number = event.getIntegerValueField(.mouseEventButtonNumber)

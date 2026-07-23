@@ -121,6 +121,10 @@ final class ManagedWindow {
     // tile it back. This flag marks the ones a later, calmer probe is allowed
     // to reclassify; a window the USER floated must never be yanked back.
     var autoFloatedAsDialog: Bool = false
+    // Where this window last sat as a FLOATING window - niri's
+    // stored_or_default_tile_pos (floating.rs): toggling a window back to
+    // floating returns it where it floated before, not to a fresh +50,+50.
+    var lastFloatingFrame: CGRect? = nil
     // Where this window sat before being stashed to the screen corner by a
     // workspace switch - tiled windows get their position recomputed on
     // restore anyway, but floating windows have no other record of where
