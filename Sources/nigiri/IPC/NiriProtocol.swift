@@ -645,6 +645,16 @@ extension TilingEngine {
         msgServer.broadcast(jsonLine(["WorkspacesChanged": ["workspaces": niriWorkspaces()]]))
     }
 
+    // niri's Event::OutputsChanged { outputs: HashMap<String, Output> }: fired
+    // when displays attach/detach/reconfigure (DMS's DisplayService follows it
+    // for per-monitor bars and scale). The payload is the same name-keyed map
+    // as the Outputs request answers.
+    func emitOutputsChanged() {
+        var byName: [String: Any] = [:]
+        for output in niriOutputs() { byName[output["name"] as? String ?? "?"] = output }
+        msgServer.broadcast(jsonLine(["OutputsChanged": ["outputs": byName]]))
+    }
+
     // `focused` distinguishes an activation that carries keyboard focus
     // from a workspace merely becoming active on a non-focused output
     // (server.rs:643-651). The single-focused-workspace model here means

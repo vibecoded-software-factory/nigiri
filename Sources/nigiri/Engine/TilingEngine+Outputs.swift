@@ -41,6 +41,11 @@ extension TilingEngine {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return }  // keep what we have if asked mid-teardown
 
+        // Signature of the current output set (id + geometry) so we only emit
+        // OutputsChanged when a display actually attached/detached/moved/scaled,
+        // not on every relayout that happens to call through here.
+        let before = outputsSignature()
+
         let focusedID = focusedOutput.displayID
         var byID: [CGDirectDisplayID: Output] = [:]
         for o in outputs { byID[o.displayID] = o }
@@ -77,6 +82,17 @@ extension TilingEngine {
 
         outputs = rebuilt
         focusedOutputIndex = rebuilt.firstIndex { $0.displayID == focusedID } ?? 0
+
+        if outputsSignature() != before { emitOutputsChanged() }
+    }
+
+    // id + AX frame per output, order-independent, for change detection.
+    private func outputsSignature() -> String {
+        outputs.map { output in
+            let frame = outputFullFrameAX(output)
+            return "\(output.displayID):\(Int(frame.origin.x)),\(Int(frame.origin.y)),"
+                + "\(Int(frame.width))x\(Int(frame.height))"
+        }.sorted().joined(separator: "|")
     }
 
     // Lay out a specific output's active workspace against its own frame. The
