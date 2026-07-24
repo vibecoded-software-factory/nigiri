@@ -25,6 +25,17 @@ extension TilingEngine {
             hasCancelButton: AX.hasAttribute(w, kAXCancelButtonAttribute as String))
     }
 
+    // niri's center_preferring_top_left_in_area (src/utils/mod.rs:525-535):
+    // centered, except that each offset is clamped at zero, so a surface
+    // LARGER than the area pins its top-left corner inside it instead of
+    // hanging off the near edge. The plain `mid - size/2` this replaces went
+    // negative on both axes for such a window and pushed it off-screen.
+    static func centerPreferringTopLeft(size: CGSize, in area: CGRect) -> CGPoint {
+        CGPoint(
+            x: area.minX + max(0, (area.width - size.width) / 2),
+            y: area.minY + max(0, (area.height - size.height) / 2))
+    }
+
     func collectCurrentAXWindows() -> [(AXUIElement, pid_t, String, CollectedKind)] {
         var result: [(AXUIElement, pid_t, String, CollectedKind)] = []
         // Windows sitting above the normal level (a shell's status bar, panels,
@@ -157,12 +168,24 @@ extension TilingEngine {
                 let nonTileableSubroles: Set<String> = [
                     kAXFloatingWindowSubrole, kAXSystemFloatingWindowSubrole, kAXSystemDialogSubrole,
                 ]
-                // The deny-list filters transient popovers from ordinary apps
-                // (a Font panel). For a forced-floating prompt these same
-                // subroles - AXSystemDialog especially - are exactly the
-                // dialog we want, and it already passed the dialog-like test
-                // above, so let it through to the floating adoption below.
-                if !forceFloating, let subrole, nonTileableSubroles.contains(subrole) {
+                // A forced-floating agent gets ONE exemption, not three:
+                // AXSystemDialog, which is what the system's own permission
+                // and alert panels report, and which is the whole reason this
+                // exemption exists. AXFloatingWindow and AXSystemFloatingWindow
+                // are transient surfaces whoever owns them - a launcher, a
+                // popover, a HUD, an input-method candidate window - and in
+                // Wayland none of them would be a toplevel at all (niri only
+                // ever wraps an xdg_toplevel, src/window/mapped.rs), so niri
+                // never decorates or lays out anything of the kind.
+                //
+                // The guard used to be `!forceFloating`, which exempted every
+                // .accessory app from ALL THREE subroles. The only test left
+                // was dialogLikeAccessoryWindow ("has a title, or has commit
+                // buttons") - and a launcher has a title. That is how
+                // launcher- and popover-shaped surfaces got adopted, floated,
+                // moved and decorated.
+                let exempt = forceFloating && subrole == kAXSystemDialogSubrole
+                if !exempt, let subrole, nonTileableSubroles.contains(subrole) {
                     debugLog("[collect] skip \(name) window: transient subrole \(subrole)")
                     continue
                 }
@@ -745,18 +768,16 @@ extension TilingEngine {
                     // that in the model so the ring lands on it immediately.
                     workspace.focus(floating: workspace.floatingWindows.count - 1)
                     workspace.isFloatingActive = true
-                    // niri centers a newly floating window with no stored
-                    // position and no rule (floating.rs:449,
-                    // center_preferring_top_left_in_area); macOS's own
-                    // placement is wherever the app asked, which niri never
-                    // honors. Rule positions are applied by applyOpenState.
+                    // niri centers a newly floating window that has no stored
+                    // position and no rule (src/layout/floating.rs:449).
+                    // Rule positions are applied by applyOpenState.
                     if rule?.defaultFloatingPosition == nil, window.positionSettable,
                         let f = WindowMover.currentFrame(element)
                     {
-                        let wa = usableScreen().frame
-                        let centered = CGPoint(
-                            x: wa.midX - f.width / 2, y: wa.midY - f.height / 2)
-                        try? WindowMover.setPosition(element, to: centered)
+                        try? WindowMover.setPosition(
+                            element,
+                            to: Self.centerPreferringTopLeft(
+                                size: f.size, in: usableScreen().frame))
                     }
                 }
                 applyOpenState()

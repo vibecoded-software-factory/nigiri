@@ -579,23 +579,35 @@ extension TilingEngine {
         configuredAnimations = config.animations
         animationsOff = config.animationsOff
         animationSlowdown = config.animationSlowdown
-        // niri's model: the focus ring is drawn around EVERY window (active
-        // colour vs inactive-color); `border` is a SEPARATE, off-by-default
-        // decoration. nigiri only ever drew a ring on the focused window and
-        // used the border overlay for the others, so `border { off }` - which
-        // niri defaults to, and which this user sets - left every unfocused
-        // window bare. The overlay is now driven by whichever decoration is
-        // actually configured, ring first.
+        // This overlay IS niri's `border`, and nothing else. niri draws the
+        // border on every tile - the focused one in active-color, the rest in
+        // inactive-color (src/layout/tile.rs:1283-1289, gated by
+        // visual_border_width() which is None while the border is off) - and
+        // it ships OFF (Border::default().off == true,
+        // niri-config/src/appearance.rs:270-283).
+        //
+        // The focus ring is a SEPARATE decoration that niri emits for exactly
+        // ONE tile per output: the active tile of the active column
+        // (src/layout/scrolling.rs:2946, `let focus_ring = focus_ring && first`),
+        // narrowed again to whichever layer is active
+        // (src/layout/workspace.rs:1635 and :1654). focus-ring's
+        // inactive-color paints that single ring on a NON-FOCUSED MONITOR; it
+        // is never a second decoration on the same monitor.
+        //
+        // So under niri's defaults exactly one decoration exists on screen.
+        // There used to be an `else if !config.ringOff` arm here that styled
+        // this overlay with the ring's inactive-color, which put a 4px
+        // rgb(80,80,80) frame around every unfocused window - the "every
+        // window has a black border" report. It cited a niri model that does
+        // not exist.
         if config.borderOn {
             borders.applyStyle(
                 width: config.borderWidth, color: config.borderInactiveColor,
                 activeColor: config.borderActiveColor)
             borderActiveEnabled = true
-        } else if !config.ringOff {
-            borders.applyStyle(width: config.ringWidth, color: config.ringInactiveColor)
-            borderActiveEnabled = false
         } else {
             borders.applyStyle(width: 0, color: config.borderInactiveColor)
+            borderActiveEnabled = false
         }
         configErrorNotification.disableFailed = config.configNotificationDisableFailed
         applyInputConfig(config)
