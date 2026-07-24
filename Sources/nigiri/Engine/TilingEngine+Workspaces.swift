@@ -99,6 +99,16 @@ extension TilingEngine {
         let lastEmpty = keep.last.map { slots[$0].empty } ?? true
         let firstEmpty = keep.first.map { slots[$0].empty } ?? true
         let insertLeading = emptyAboveFirst && !firstEmpty
+        // Special case (monitor.rs:646-653): with empty-workspace-above-first
+        // and EVERYTHING empty, two empty unnamed workspaces collapse to
+        // one - keeping both showed a phantom pair on an empty desktop.
+        if emptyAboveFirst, !insertLeading, keep.count == 2,
+            keep.allSatisfy({ slots[$0].empty && !slots[$0].named })
+        {
+            return CompactPlan(
+                keep: [keep[0]], active: 0, previous: 0,
+                appendTrailing: false, insertLeading: false)
+        }
         return CompactPlan(
             keep: keep,
             active: activeSlot + (insertLeading ? 1 : 0),
@@ -141,13 +151,22 @@ extension TilingEngine {
     // for a number past the end lands on the trailing empty workspace
     // instead of manufacturing a stack of empty ones.
     func focusWorkspace(_ number: Int) {
-        // niri creates workspaces up to N instead of clamping: pressing
-        // Mod+7 with four workspaces open lands you on 7, not on the last
-        // one. compactWorkspaces() collects whatever stays empty afterwards,
-        // so this cannot leak workspaces.
-        let requested = max(0, number - 1)
-        while workspaces.count <= requested { workspaces.append(Workspace()) }
-        let targetIndex = requested
+        // niri CLAMPS: switch_workspace(idx) is activate_workspace(min(idx,
+        // len - 1)) (src/layout/monitor.rs:1011-1013). Pressing Mod+7 with
+        // four workspaces lands on the trailing empty one, never on a
+        // manufactured stack of empties. (The comment here used to claim
+        // the opposite, citing niri for a behavior niri does not have -
+        // fidelity audit ACT-1.)
+        let targetIndex = min(max(0, number - 1), workspaces.count - 1)
+        // niri's workspace-auto-back-and-forth (switch_workspace_auto_back_
+        // and_forth, monitor.rs:1015-1025): focusing the workspace you are
+        // already on goes back to the previous one, when the input flag asks.
+        if targetIndex == activeWorkspaceIndex, workspaceAutoBackAndForth,
+            previousWorkspaceIndex != activeWorkspaceIndex
+        {
+            focusWorkspace(previousWorkspaceIndex + 1)
+            return
+        }
         guard targetIndex != activeWorkspaceIndex else { return }
         // Two frames, and the difference matters once a strut is reserved: the
         // RAW visible frame is where windows park off-screen (below its bottom,
@@ -189,7 +208,7 @@ extension TilingEngine {
             targets.append((w, strip))
         }
         var enteringTargets = ColumnLayoutEngine.targetFrames(
-            columns: workspace.columns, in: usableFrame, maximizedIndex: workspace.maximizedIndex,
+            columns: workspace.columns, in: usableFrame,
             viewOffset: workspace.viewOffset)
         var enteringFloating: [ManagedWindow] = []
         for w in workspace.floatingWindows {
@@ -293,13 +312,15 @@ extension TilingEngine {
                 if discovered { self.reflow() }
             })
         print("focus-workspace \(number)")
-        msgServer.broadcast("{\"event\":\"workspace\",\"active\":\(targetIndex + 1)}")
-        emitWorkspaceActivated(targetIndex)
+        msgServer.broadcastLegacy("{\"event\":\"workspace\",\"active\":\(targetIndex + 1)}")
+        emitWorkspaceActivated(targetIndex, focused: true)
         emitWorkspacesChanged()
     }
 
-    // niri's focus-workspace-down/up (Mod+Page_Down/Up, Mod+U/I) - cycles to
-    // the adjacent workspace number, creating one past the end if needed.
+    // niri's focus-workspace-down/up (Mod+Page_Down/Up, Mod+U/I) - the
+    // adjacent workspace, CLAMPED at both ends like switch_workspace_down/up
+    // (src/layout/monitor.rs:992-1004): on the last workspace, down is a
+    // no-op (focusWorkspace clamps), never a fresh empty one.
     func focusWorkspaceRelative(delta: Int) {
         // empty-workspace-above-first: going up from the first workspace
         // grows a new empty one above it instead of doing nothing.
@@ -326,8 +347,12 @@ extension TilingEngine {
             print("move-column-to-workspace: ignored, a workspace switch is in progress")
             return
         }
-        guard !workspace.isFloatingActive else {
-            print("move-column-to-workspace: focus is on the floating layer")
+        if workspace.isFloatingActive {
+            // niri's move_column_to_workspace with the floating layer active
+            // falls through to moving the FLOATING WINDOW (monitor.rs:
+            // 961-968, and the same in the up/down variants) - refusing with
+            // a log line was invented behavior (audit ACT-3).
+            moveWindowToWorkspace(number, focus: focus)
             return
         }
         guard workspace.columns.indices.contains(workspace.focusedIndex) else {
@@ -337,15 +362,21 @@ extension TilingEngine {
         // Dynamic model: past-the-end numbers land on the trailing empty
         // workspace (compactWorkspaces then grows a fresh trailing one).
         let targetIndex = min(max(0, number - 1), workspaces.count - 1)
+        // niri's workspace-auto-back-and-forth (switch_workspace_auto_back_
+        // and_forth, monitor.rs:1015-1025): focusing the workspace you are
+        // already on goes back to the previous one, when the input flag asks.
+        if targetIndex == activeWorkspaceIndex, workspaceAutoBackAndForth,
+            previousWorkspaceIndex != activeWorkspaceIndex
+        {
+            focusWorkspace(previousWorkspaceIndex + 1)
+            return
+        }
         guard targetIndex != activeWorkspaceIndex else { return }
         let screenFrame = currentRawScreenFrame()
         guard let column = workspace.removeColumn(at: workspace.focusedIndex) else { return }
-        // The fullscreen window cannot travel to another workspace and leave
-        // this one still pointing at it: the same invariant detachFromTiling
-        // enforces window by window.
-        if let full = workspace.fullscreenWindow, column.windows.contains(where: { $0 === full }) {
-            workspace.fullscreenWindow = nil
-        }
+        // Fullscreen travels WITH the column now (the flag lives on it,
+        // like upstream's is_pending_fullscreen): the moved column arrives
+        // on the other workspace still fullscreen, nothing to cancel here.
         // Focus falls after the removal - to something the user can see,
         // not to whatever column (possibly on another macOS Space) slid
         // into the vacated index.
@@ -355,11 +386,17 @@ extension TilingEngine {
             w.stashedFrame = frame
             _ = ColumnLayoutEngine.applyFrame(w, target: parkedOffScreen(frame, screenFrame: screenFrame))
         }
-        workspaces[targetIndex].appendColumn(column)
-        // The column keeps focus on arrival, so the switch below lands on it
-        // rather than on whatever happened to be focused there before.
-        workspaces[targetIndex].focus(column: workspaces[targetIndex].columns.count - 1)
-        workspaces[targetIndex].isFloatingActive = false
+        let target = workspaces[targetIndex]
+        // niri inserts the arriving column NEXT TO the target's active one
+        // (add_column's default index is active_column_idx + 1,
+        // scrolling.rs:972-978), and with focus=false leaves the target's
+        // own focus completely untouched (ActivateWindow::No,
+        // monitor.rs:853-908). It used to append at the END and steal the
+        // focus unconditionally (audit ACT-4). With focus=true the column
+        // is activated on arrival, so the switch below lands on it.
+        let insertAt = target.columns.isEmpty ? 0 : min(target.focusedIndex + 1, target.columns.count)
+        target.insertColumn(column, at: insertAt, activating: focus)
+        if focus { target.isFloatingActive = false }
         print("move-column-to-workspace \(number)\(focus ? " (following the focus)" : "")")
         if focus {
             // The normal animated switch - it restores the moved column from
@@ -375,13 +412,15 @@ extension TilingEngine {
     // the edges variant is active downgrades to a plain maximize instead of
     // toggling everything off - matching niri's separate states.
     func maximizeColumnToggle() {
-        guard !workspace.isFloatingActive, !workspace.columns.isEmpty else { return }
-        if workspace.maximizedIndex == workspace.focusedIndex {
-            workspace.maximizedIndex = nil
-            print("maximize-column: off")
-        } else {
-            workspace.maximizedIndex = workspace.focusedIndex
+        guard !workspace.isFloatingActive, let column = focusedColumn() else { return }
+        // niri's toggle_full_width (scrolling.rs:4909-4917): a per-column
+        // flag flip, so maximizing one column says nothing about any other -
+        // several can be full-width at once.
+        column.isFullWidth.toggle()
+        if column.isFullWidth {
             print("maximize-column: column \(workspace.focusedIndex) (\(describeFocus()))")
+        } else {
+            print("maximize-column: off")
         }
         reflow()
     }
@@ -393,6 +432,15 @@ extension TilingEngine {
         guard let column = focusedColumn() else { return }
         column.isTabbed.toggle()
         column.cachedHeights = nil
+        // Leaving tabbed with a multi-window column cancels fullscreen and
+        // maximize (scrolling.rs:2192-2196): the stack reappears, and a
+        // fullscreen pinned to one of its windows no longer describes it.
+        if !column.isTabbed, column.windows.count > 1 {
+            if column.isPendingFullscreen || column.isPendingMaximized {
+                toggleWindowedFullscreen()
+            }
+            column.isFullWidth = false
+        }
         reflow()
         print(
             "toggle-column-tabbed-display -> \(column.isTabbed ? "tabbed" : "normal") (\(column.windows.count) window(s))"
@@ -401,8 +449,11 @@ extension TilingEngine {
 
     // niri's switch-preset-window-height, applied to the focused window
     // like set-window-height.
-    func switchPresetWindowHeight(delta: Int = 1) {
-        guard let column = focusedColumn(), let window = focusedStackWindow() else { return }
+    func switchPresetWindowHeight(delta: Int = 1, id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "switch-preset-window-height") else { return }
+        guard case .tiled(let wi, let ci, _) = t.location else { return }
+        let column = workspaces[wi].columns[ci]
+        let window = t.window
         let columnHeight = usableScreen().frame.height - 2 * ColumnLayoutEngine.gap
         // niri's preset-window-heights: its OWN config list, cycled by
         // INDEX. nigiri used to reuse preset-column-WIDTHS scaled by the
@@ -418,13 +469,29 @@ extension TilingEngine {
         guard !presets.isEmpty else { return }
         let current =
             window.manualHeightPx ?? (WindowMover.currentFrame(window.axElement)?.height ?? columnHeight)
-        let base = window.presetHeightIndex ?? presets.firstIndex { $0 > current + 1 }.map { $0 - 1 } ?? -1
-        let nextIndex = ((base + delta) % presets.count + presets.count) % presets.count
+        // Same two-tier resolution as the width presets (scrolling.rs:
+        // 5043-5055): stored index advances by one; off-preset, forward
+        // seeds at the first strictly-taller preset and backward at the
+        // LAST strictly-shorter one. The old firstTaller-1 seed walked
+        // backward one preset too far (audit LAY-7).
+        guard
+            let nextIndex = ColumnLayoutEngine.presetIndex(
+                after: current, in: presets, delta: delta, from: window.presetHeightIndex)
+        else { return }
+        // One non-Auto height per column (scrolling.rs:244-247): upstream's
+        // toggle_window_height routes through set_window_height, which
+        // converts the siblings to Auto first.
+        if window.manualHeightPx == nil, window.presetHeightIndex == nil {
+            convertHeightsToAuto(column)
+        }
+        // Stored as niri's WindowHeight::Preset(idx), NOT materialized px:
+        // the layout re-resolves it every pass (scrolling.rs:4533-4547), so
+        // a monitor or gap change re-applies the proportion.
+        window.manualHeightPx = nil
         window.presetHeightIndex = nextIndex
-        let nextPreset = presets[nextIndex]
-        window.manualHeightPx = nextPreset
         column.cachedHeights = nil
         reflow()
-        print("switch-preset-window-height -> \(Int(nextPreset))px")
+        print(
+            "switch-preset-window-height -> preset \(nextIndex + 1) (\(Int(presets[nextIndex]))px now)")
     }
 }

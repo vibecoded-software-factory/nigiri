@@ -8,7 +8,9 @@ enum ColumnLayoutEngine {
     // Mutable statics, not lets: these are the config file's knobs
     // (layout { gap / preset-column-widths / default-column-width }),
     // rewritten by applyConfig on every live reload.
-    static var gap: CGFloat = 10
+    // niri's default gaps is 16 (niri-config/src/layout.rs:47); 10 was a
+    // compiled-in invention that only ever showed with no config file.
+    static var gap: CGFloat = 16
     // Layout epoch. Both caches below are ANSWERS FROM AN APP - "this window
     // refuses to be narrower than X", "it answered Y when asked for Z" - and
     // an app's constraints are not permanent: a call starting in a chat app,
@@ -34,24 +36,55 @@ enum ColumnLayoutEngine {
         .proportion(1.0 / 3.0), .proportion(0.5), .proportion(2.0 / 3.0),
     ]
     // What a brand-new column asks for (niri's default-column-width).
+    // The plain proportion is kept as a fallback for sites with no window
+    // in hand (drop hints); adoption resolves the full spec below.
     static var defaultColumnWidth: CGFloat = 0.5
+    static var defaultColumnWidthSpec: NigiriConfig.DefaultWidth = .proportion(0.5)
+
+    // niri's default-column-width resolution for a NEW column: an explicit
+    // preset maps through From<PresetSize> for ColumnWidth (scrolling.rs:
+    // 3912-3919, with its clamps); the empty block means the window's own
+    // current width, stored as FIXED pixels (resolve_scrolling_width,
+    // workspace.rs:885-906 - `width.unwrap_or_else(|| Fixed(window.size().w))`;
+    // borders are overlays here, so no border widening).
+    static func resolveDefaultWidth(
+        _ spec: NigiriConfig.DefaultWidth, windowWidth: CGFloat?
+    ) -> ColumnWidth {
+        switch spec {
+        case .proportion(let p): return .proportion(min(max(p, 0), 10000))
+        case .fixed(let px): return .fixed(min(max(px, 1), 100000))
+        case .natural:
+            guard let w = windowWidth else { return .proportion(defaultColumnWidth) }
+            return .fixed(min(max(w, 1), 100000))
+        }
+    }
+
+    // niri's resolve_column_width (scrolling.rs:4401-4411), extra_size 0:
+    // a proportion goes through the width formula, fixed pixels ARE the
+    // answer - independent of gaps and view width, which is the whole point
+    // of ColumnWidth::Fixed.
+    static func resolveColumnWidth(_ width: ColumnWidth, usableWidth: CGFloat) -> CGFloat {
+        switch width {
+        case .proportion(let p): return self.width(forProportion: p, usableWidth: usableWidth)
+        case .fixed(let px): return px
+        }
+    }
 
     struct Placement {
         let x: CGFloat  // virtual, not yet adjusted for viewOffset
         let width: CGFloat
     }
 
-    // Every column's width is a plain function of its own widthProportion
+    // Every column's width is a plain function of its own ColumnWidth
     // (or the full usable width, if it's the maximized column) - no
     // negotiation with siblings, since a column that doesn't fit on screen
     // just extends the scrollable strip instead of forcing the others to
     // shrink. See the formula below: it is niri's, and it is deliberately
     // independent of how many columns exist.
-    static func columnPlacements(columns: [Column], usableWidth: CGFloat, maximizedIndex: Int?) -> [Placement]
-    {
+    static func columnPlacements(columns: [Column], usableWidth: CGFloat) -> [Placement] {
         var x: CGFloat = 0
         var result: [Placement] = []
-        for (idx, column) in columns.enumerated() {
+        for column in columns {
             // niri's resolve_column_width (scrolling.rs), read verbatim:
             //   ColumnWidth::Proportion(p) => (working_w - gaps) * p - gaps
             // Note what it does NOT contain: the column COUNT. A column's
@@ -67,9 +100,9 @@ enum ColumnLayoutEngine {
             // columns come to (working_w - gap) - 3*gap plus the two gaps
             // between them = working_w - 2*gap, the full working area.
             let requested =
-                idx == maximizedIndex
+                column.isFullWidth
                 ? usableWidth
-                : (usableWidth + gap) * column.widthProportion - gap
+                : resolveColumnWidth(column.width, usableWidth: usableWidth)
             // niri's update_tile_sizes_with_transaction (scrolling.rs):
             //   min_width = max over tiles' min sizes,
             //   max_width = min over tiles' non-zero max sizes,
@@ -83,8 +116,22 @@ enum ColumnLayoutEngine {
             // infinite horizontally, so it extends the scroll range rather
             // than fighting the app.
             let fixedWidths = column.windows.compactMap { $0.fixedSize?.width }
+            // niri also NARROWS a column when the client answers smaller
+            // than asked (max-size hints, scrolling.rs ColumnData tracking
+            // the actual committed width); the AX analogue is the epoch-
+            // guarded memo holding an undersized answer to this same
+            // request. Without it the layout kept a permanent gap the width
+            // of the refusal.
+            let undersized = column.windows.compactMap { w -> CGFloat? in
+                guard let memo = w.refusalMemo,
+                    abs(memo.requested.width - requested) <= 1.0,
+                    memo.actual.width < memo.requested.width - 1.0
+                else { return nil }
+                return memo.actual.width
+            }
             let minWidth = max(column.validMinWidth ?? 0, fixedWidths.max() ?? 0)
-            let maxWidth = max(fixedWidths.min() ?? .greatestFiniteMagnitude, minWidth)
+            let ceilings = fixedWidths + undersized
+            let maxWidth = max(ceilings.min() ?? .greatestFiniteMagnitude, minWidth)
             let width = max(min(requested, maxWidth), minWidth)
             result.append(Placement(x: x, width: width))
             x += width + gap
@@ -146,10 +193,25 @@ enum ColumnLayoutEngine {
         if let stored {
             return ((stored + delta) % presets.count + presets.count) % presets.count
         }
+        // "Some allowance for fractional scaling purposes" - upstream
+        // compares RESOLVED PIXELS with a 1px margin (scrolling.rs:4820-4838),
+        // so `current` and `presets` here are pixels, not proportions.
         if delta > 0 {
-            return presets.firstIndex { current + 0.001 < $0 } ?? 0
+            return presets.firstIndex { current + 1 < $0 } ?? 0
         }
-        return presets.lastIndex { $0 + 0.001 < current } ?? (presets.count - 1)
+        return presets.lastIndex { $0 + 1 < current } ?? (presets.count - 1)
+    }
+
+    // niri's convert_heights_to_auto weighting (scrolling.rs:5070-5083):
+    // Auto weights that preserve the apparent heights, centered so the
+    // median height gets weight 1 (weights are invariant to scaling).
+    static func autoWeights(preserving heights: [CGFloat]) -> [CGFloat] {
+        let sorted = heights.sorted()
+        guard !sorted.isEmpty, sorted[sorted.count / 2] > 0 else {
+            return heights.map { _ in 1 }
+        }
+        let median = sorted[sorted.count / 2]
+        return heights.map { $0 / median }
     }
 
     // The vertical twin. niri's resolve_preset_size (scrolling.rs) is
@@ -291,12 +353,11 @@ enum ColumnLayoutEngine {
     }
 
     static func columnGeometry(
-        columns: [Column], in screenFrame: CGRect,
-        maximizedIndex: Int?, viewOffset: CGFloat
+        columns: [Column], in screenFrame: CGRect, viewOffset: CGFloat
     ) -> [ColumnGeometry] {
         let usableWidth = screenFrame.width - 2 * gap
         let placements = columnPlacements(
-            columns: columns, usableWidth: usableWidth, maximizedIndex: maximizedIndex)
+            columns: columns, usableWidth: usableWidth)
         return zip(columns, placements).compactMap { column, placement in
             guard !column.windows.isEmpty else { return nil }
             let x = grantedX(
@@ -330,13 +391,12 @@ enum ColumnLayoutEngine {
     // go through the layout's clamp at all; parked tabs are excluded here by
     // identity instead of by position.
     static func overviewFrames(
-        columns: [Column], in screenFrame: CGRect, maximizedIndex: Int?,
-        viewOffset: CGFloat = 0
+        columns: [Column], in screenFrame: CGRect, viewOffset: CGFloat = 0
     ) -> [(window: ManagedWindow, frame: CGRect)] {
         guard !columns.isEmpty else { return [] }
         let usableWidth = screenFrame.width - 2 * gap
         let placements = columnPlacements(
-            columns: columns, usableWidth: usableWidth, maximizedIndex: maximizedIndex)
+            columns: columns, usableWidth: usableWidth)
         var result: [(ManagedWindow, CGRect)] = []
         for (column, placement) in zip(columns, placements) {
             guard !column.windows.isEmpty else { continue }
@@ -378,7 +438,11 @@ enum ColumnLayoutEngine {
         _ proportion: CGFloat, minWidth: CGFloat?, maxWidth: CGFloat?,
         usableWidth: CGFloat
     ) -> CGFloat {
-        var p = min(1.0, max(0.05, proportion))
+        // niri's clamp is (0, 10000) (scrolling.rs, set_column_width):
+        // a proportion ABOVE 1.0 is legal - the column grows wider than
+        // the view and the view left-aligns it. The invented [0.05, 1.0]
+        // cap made grow-past-full-width impossible.
+        var p = min(10000.0, max(0.0, proportion))
         guard usableWidth > 0 else { return p }
         if let maxWidth {
             p = min(p, ColumnLayoutEngine.proportion(forWidth: maxWidth, usableWidth: usableWidth))
@@ -428,10 +492,14 @@ enum ColumnLayoutEngine {
             ?? (index: 0, x: point.x)
         let horizontalDistance = abs(closestColumnGap.x - point.x)
 
-        // The column the cursor is actually over: only its tile gaps count.
-        let hovered = columnFrames.firstIndex { frames in
+        // niri's hovered column is the one to the LEFT of the pointer
+        // (take_while col_x <= x, scrolling.rs:824-830) - containment is
+        // not required, so a pointer inside a horizontal gap still contests
+        // the column gap against that column's tile gaps. Requiring strict
+        // containment made every gap answer newColumn unconditionally.
+        let hovered = columnFrames.lastIndex { frames in
             guard let f = frames.first else { return false }
-            return point.x >= f.minX && point.x <= f.maxX
+            return f.minX <= point.x
         }
         guard let hovered else { return .newColumn(closestColumnGap.index) }
         let frames = columnFrames[hovered]
@@ -460,7 +528,7 @@ enum ColumnLayoutEngine {
     // column size would flicker it on every settle, and the min-width
     // discovery would memorize its full-screen width as the column minimum.
     static func layout(
-        columns: [Column], in screenFrame: CGRect, maximizedIndex: Int? = nil, viewOffset: CGFloat = 0,
+        columns: [Column], in screenFrame: CGRect, viewOffset: CGFloat = 0,
         skipping: ManagedWindow? = nil
     ) -> Bool {
         guard !columns.isEmpty else { return false }
@@ -475,8 +543,7 @@ enum ColumnLayoutEngine {
         for _ in 0..<3 {
             var discovered = false
             for geometry in columnGeometry(
-                columns: columns, in: screenFrame,
-                maximizedIndex: maximizedIndex, viewOffset: viewOffset)
+                columns: columns, in: screenFrame, viewOffset: viewOffset)
             {
                 var actualWidth = geometry.width
                 if let visible = geometry.visibleOnly {
@@ -529,14 +596,12 @@ enum ColumnLayoutEngine {
     // round-trips per parked window, and the drop preview calls this on every
     // leftMouseDragged (~120/s, inside the event tap's own callback).
     static func targetFrames(
-        columns: [Column], in screenFrame: CGRect, maximizedIndex: Int? = nil,
-        viewOffset: CGFloat = 0, includingParked: Bool = true
+        columns: [Column], in screenFrame: CGRect, viewOffset: CGFloat = 0, includingParked: Bool = true
     ) -> [(window: ManagedWindow, frame: CGRect)] {
         guard !columns.isEmpty else { return [] }
         var result: [(ManagedWindow, CGRect)] = []
         for geometry in columnGeometry(
-            columns: columns, in: screenFrame,
-            maximizedIndex: maximizedIndex, viewOffset: viewOffset)
+            columns: columns, in: screenFrame, viewOffset: viewOffset)
         {
             if let visible = geometry.visibleOnly {
                 result.append(
@@ -615,26 +680,51 @@ enum ColumnLayoutEngine {
         return actualWidth
     }
 
+    // preset-window-heights[index] resolved against the column's height -
+    // niri re-resolves WindowHeight::Preset on every update_tile_sizes
+    // (scrolling.rs:4533-4547), so a monitor or gap change re-applies the
+    // proportion instead of keeping stale pixels.
+    static func resolvedPresetHeight(index: Int, columnHeight: CGFloat) -> CGFloat? {
+        guard presetWindowHeightSizes.indices.contains(index) else { return nil }
+        switch presetWindowHeightSizes[index] {
+        case .proportion(let p): return height(forProportion: p, usableHeight: columnHeight)
+        case .fixed(let px): return px
+        }
+    }
+
+    // The non-Auto height of a window, if any: an exact size constraint
+    // wins (niri scrolling.rs: `if min_size.h == max_size.h { *h =
+    // WindowHeight::Fixed(min_size.h) }`), then an explicit Fixed, then a
+    // Preset re-resolved against the column height.
+    static func fixedHeight(of w: ManagedWindow, columnHeight: CGFloat) -> CGFloat? {
+        if let exact = w.fixedSize?.height { return exact }
+        if let manual = w.manualHeightPx { return manual }
+        if let index = w.presetHeightIndex {
+            return resolvedPresetHeight(index: index, columnHeight: columnHeight)
+        }
+        return nil
+    }
+
     // Every window but one manually-sized (niri's WindowHeight::Fixed) keeps
     // exactly that height; the rest (Auto, matching niri's WindowHeight::Auto)
     // split whatever's left equally - the fallback used before a column's
     // real stack shape has been probed (see probeTargetHeights below for the
     // authoritative, stuck-aware version).
     static func naiveHeights(for windows: [ManagedWindow], usableHeight: CGFloat) -> [CGFloat] {
-        // effectiveFixedHeightPx, not manualHeightPx: an exact size
-        // constraint fixes the height exactly like set-window-height does
-        // (niri scrolling.rs: `if min_size.h == max_size.h { *h =
-        // WindowHeight::Fixed(min_size.h) }`).
-        let manualTotal = windows.reduce(CGFloat(0)) { $0 + ($1.effectiveFixedHeightPx ?? 0) }
+        // The callers pass the windows' share (column height minus the
+        // inter-window gaps); presets resolve against the full column height.
+        let columnHeight = usableHeight + gap * CGFloat(max(0, windows.count - 1))
+        func fixed(_ w: ManagedWindow) -> CGFloat? { fixedHeight(of: w, columnHeight: columnHeight) }
+        let manualTotal = windows.reduce(CGFloat(0)) { $0 + (fixed($1) ?? 0) }
         // Weighted, not equal: niri's WindowHeight::Auto carries a weight,
         // so a window that was made taller keeps its ratio when the column's
         // membership changes (see ManagedWindow.heightWeight).
-        let weightTotal = windows.filter { $0.effectiveFixedHeightPx == nil }.reduce(CGFloat(0)) {
+        let weightTotal = windows.filter { fixed($0) == nil }.reduce(CGFloat(0)) {
             $0 + max(0.01, $1.heightWeight)
         }
         let autoSpace = max(0, usableHeight - manualTotal)
         return windows.map { w in
-            guard w.effectiveFixedHeightPx == nil else { return w.effectiveFixedHeightPx! }
+            if let px = fixed(w) { return px }
             guard weightTotal > 0 else { return 0 }
             return autoSpace * max(0.01, w.heightWeight) / weightTotal
         }
@@ -652,28 +742,38 @@ enum ColumnLayoutEngine {
     ) -> [CGFloat] {
         let n = CGFloat(column.windows.count)
         let usableHeight = height - gap * (n - 1)
-        let manualTotal = column.windows.reduce(CGFloat(0)) { $0 + ($1.effectiveFixedHeightPx ?? 0) }
-        let autoCount = column.windows.filter { $0.effectiveFixedHeightPx == nil }.count
+        // `height` is the full column height, the reference presets resolve
+        // against (see fixedHeight above).
+        func fixed(_ w: ManagedWindow) -> CGFloat? { fixedHeight(of: w, columnHeight: height) }
+        let manualTotal = column.windows.reduce(CGFloat(0)) { $0 + (fixed($1) ?? 0) }
         let autoUsableHeight = max(0, usableHeight - manualTotal)
         // Weighted share per window (niri's Auto { weight }), so the first
         // probe already asks for the proportions the stack is supposed to
         // keep instead of an equal slice.
-        let weightTotal = column.windows.filter { $0.effectiveFixedHeightPx == nil }.reduce(CGFloat(0)) {
+        let weightTotal = column.windows.filter { fixed($0) == nil }.reduce(CGFloat(0)) {
             $0 + max(0.01, $1.heightWeight)
         }
         func weightedShare(_ w: ManagedWindow) -> CGFloat {
             guard weightTotal > 0 else { return 0 }
             return autoUsableHeight * max(0.01, w.heightWeight) / weightTotal
         }
-        let naiveShare = autoCount > 0 ? autoUsableHeight / CGFloat(autoCount) : 0
-
         let stuckTolerance: CGFloat = 1.0
         var heights = [CGFloat](repeating: 0, count: column.windows.count)
         // A window that refused its share: its probed height is final, and
         // comes out of the pool the remaining Auto windows split.
         var stuck = [Bool](repeating: false, count: column.windows.count)
-        var share = naiveShare
+        // niri redistributes the remaining pool WEIGHT-proportionally on
+        // every iteration (scrolling.rs, factor = weight / total_weight) -
+        // a flat equal share silently discarded heightWeight exactly when
+        // it mattered. `pool` is the space left for non-stuck Auto windows,
+        // `flexWeight` their weight total; both refresh when someone sticks.
+        var pool = autoUsableHeight
+        var flexWeight = weightTotal
         var redistributed = false
+        func redistributedShare(_ w: ManagedWindow) -> CGFloat {
+            guard flexWeight > 0 else { return 0 }
+            return max(0, pool) * max(0.01, w.heightWeight) / flexWeight
+        }
 
         // Each pass writes the current share to every not-yet-stuck Auto
         // window and records what it ACCEPTED; a refusal shrinks the pool for
@@ -690,25 +790,28 @@ enum ColumnLayoutEngine {
                 // `share` starts as each window's weighted share and only
                 // becomes a flat redistribution once someone refuses.
                 let targetH =
-                    w.effectiveFixedHeightPx
-                    ?? (stuck[i] ? heights[i] : (redistributed ? share : weightedShare(w)))
+                    fixed(w)
+                    ?? (stuck[i] ? heights[i] : (redistributed ? redistributedShare(w) : weightedShare(w)))
                 let actual = applyFrame(w, target: CGRect(x: x, y: currentY, width: width, height: targetH))
                     .height
                 heights[i] = actual
                 currentY += actual + gap
-                if w.effectiveFixedHeightPx == nil, !stuck[i], actual > targetH + stuckTolerance {
+                if fixed(w) == nil, !stuck[i], actual > targetH + stuckTolerance {
                     stuck[i] = true
                     newlyStuck = true
                 }
             }
             guard newlyStuck else { break }
             let stuckTotal = column.windows.indices
-                .filter { stuck[$0] && column.windows[$0].effectiveFixedHeightPx == nil }
+                .filter { stuck[$0] && fixed(column.windows[$0]) == nil }
                 .reduce(CGFloat(0)) { $0 + heights[$1] }
-            let flexibleCount = column.windows.indices
-                .filter { !stuck[$0] && column.windows[$0].effectiveFixedHeightPx == nil }.count
-            guard flexibleCount > 0 else { break }
-            share = max(0, autoUsableHeight - stuckTotal) / CGFloat(flexibleCount)
+            let flexible = column.windows.indices
+                .filter { !stuck[$0] && fixed(column.windows[$0]) == nil }
+            guard !flexible.isEmpty else { break }
+            pool = autoUsableHeight - stuckTotal
+            flexWeight = flexible.reduce(CGFloat(0)) {
+                $0 + max(0.01, column.windows[$1].heightWeight)
+            }
             redistributed = true
         }
 

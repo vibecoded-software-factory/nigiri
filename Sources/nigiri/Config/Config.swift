@@ -1,7 +1,8 @@
 import AppKit
 import Carbon
 
-// nigiri's config file: ~/.config/nigiri/config.kdl, live-reloaded on save.
+// nigiri's config: niri's own ~/.config/niri/config.kdl when present
+// (~/.config/nigiri/config.kdl only as fallback - see `path`), live-reloaded.
 // The syntax MIRRORS niri's real config.kdl as closely as the feature set
 // allows - same section names, same nesting, same bind shape - so moving
 // between the two configs is copy-paste, not translation:
@@ -85,9 +86,10 @@ struct NigiriConfig {
         // niri's default-floating-position relative-to anchor
         // (window_rule.rs, RelativeTo); nil = top-left.
         var defaultFloatingPositionRelativeTo: String? = nil
-        var defaultWidthProportion: CGFloat?
-        // niri's open-on-workspace - by number, or by named workspace.
-        var openOnWorkspace: Int?
+        var defaultWidth: DefaultWidth?
+        // niri's open-on-workspace: a workspace NAME only
+        // (window_rule.rs:25-26, Option<String>). The old integer form was
+        // invented syntax - upstream rejects a bare number as a type error.
         var openOnWorkspaceName: String?
         var openMaximized: Bool? = nil
         // niri's open-fullscreen (macOS native fullscreen on adoption).
@@ -140,7 +142,16 @@ struct NigiriConfig {
     var presetColumnWidths: [CGFloat] = [1.0 / 3.0, 0.5, 2.0 / 3.0]
     // niri's `preset-column-widths { fixed 1200; }` - pixels, converted to
     // niri's preset-window-heights: its OWN list, not the widths reused.
-    var defaultColumnWidth: CGFloat = 0.5
+    // niri's default-column-width in its three shapes (layout.rs:146-147,
+    // default-config.kdl:142-143): a proportion, fixed pixels, or the EMPTY
+    // block - "the window gets to decide its initial width". The fixed and
+    // empty forms used to be silently swallowed as 0.5.
+    enum DefaultWidth: Equatable {
+        case proportion(CGFloat)
+        case fixed(CGFloat)
+        case natural
+    }
+    var defaultColumnWidth: DefaultWidth = .proportion(0.5)
     var ringWidth: CGFloat = 4
     // See macOSWindowCornerRadius: the radius the ring/border round their
     // corners by, matching macOS's own window corner. Measured, not guessed.
@@ -159,22 +170,51 @@ struct NigiriConfig {
     // niri: rgb(80,80,80) (appearance.rs).
     var ringInactiveColor: NSColor = NSColor(
         calibratedRed: 80 / 255.0, green: 80 / 255.0, blue: 80 / 255.0, alpha: 1)
+    // niri's urgent-color: rgb(155,0,0) (appearance.rs:250). Parsed and
+    // stored; dormant until urgency machinery exists.
+    var ringUrgentColor: NSColor = NSColor(
+        calibratedRed: 155 / 255.0, green: 0, blue: 0, alpha: 1)
+    // The gradient's CSS angle in degrees; niri's default is 180 ("to
+    // bottom", appearance.rs:92) - only 45 used to be accepted.
+    var ringAngle: CGFloat = 180
     var ringOff: Bool = false
-    // layout { tab-indicator { active-gradient / active-color / inactive-color } }
-    // niri derives unset tab colors from the focus-ring (tab_indicator.rs);
-    // these defaults are that derivation for the default ring.
-    var tabActiveColor: NSColor = NSColor(
-        calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1)
-    var tabInactiveColor: NSColor = NSColor(
-        calibratedRed: 80 / 255.0, green: 80 / 255.0, blue: 80 / 255.0, alpha: 1)
+    // layout { tab-indicator { ... } } - niri's full TabIndicator
+    // (appearance.rs:459-499). Colors are OPTIONAL like upstream: unset,
+    // they derive from the focus-ring/border at apply time
+    // (tab_indicator.rs:363-406). The geometry knobs used to be hardcoded
+    // constants and every real key was rejected as unknown.
+    enum TabPosition: String { case left, right, top, bottom }
+    var tabIndicatorOff = false
+    var tabHideWhenSingleTab = false
+    var tabPlaceWithinColumn = false
+    var tabGap: CGFloat = 5
+    var tabWidth: CGFloat = 4
+    var tabLengthProportion: CGFloat = 0.5
+    var tabPosition: TabPosition = .left
+    var tabGapsBetweenTabs: CGFloat = 0
+    var tabCornerRadius: CGFloat = 0
+    var tabActiveColor: NSColor? = nil
+    var tabInactiveColor: NSColor? = nil
+    // Parsed and stored; dormant until urgency machinery exists.
+    var tabUrgentColor: NSColor? = nil
     var rules: [Rule] = []
     var binds: [Bind] = []
-    // niri's layout.border: a plain stroke on NON-focused windows (the
-    // focused one wears the focus ring). Width 0 = off, niri's default.
-    var borderWidth: CGFloat = 0
+    // niri's layout.border: a decoration in its own right, off by default,
+    // with its own on/off flag - NOT "width 0 = off". Defaults are
+    // Border::default() (appearance.rs:270-283): width 4, active
+    // rgb(255,200,127), inactive rgb(80,80,80). The old inactive default
+    // #585B70 was Catppuccin surface2 - a personal config baked in as a
+    // default, exactly the kind of invention the fidelity audit hunts.
+    var borderOn: Bool = false
+    var borderWidth: CGFloat = 4
+    var borderActiveColor: NSColor = NSColor(
+        calibratedRed: 255 / 255.0, green: 200 / 255.0, blue: 127 / 255.0, alpha: 1)
     var borderInactiveColor: NSColor = NSColor(
-        calibratedRed: 0x58 / 255.0, green: 0x5B / 255.0, blue: 0x70 / 255.0, alpha: 1)
+        calibratedRed: 80 / 255.0, green: 80 / 255.0, blue: 80 / 255.0, alpha: 1)
     // niri's input section, the parts with an AX-world equivalent.
+    // niri's input { workspace-auto-back-and-forth } (input.rs:23,51):
+    // focusing the already-active workspace goes back to the previous one.
+    var workspaceAutoBackAndForth: Bool = false
     var focusFollowsMouse: Bool = false
     var warpMouseToFocus: Bool = false
     // niri's spawn-at-startup - argv, no shell (misc.rs). Run once at
@@ -194,24 +234,6 @@ struct NigiriConfig {
     // Pre-created 1..N at those positions so focus/move/open-on-workspace
     // can target them by name.
     var namedWorkspaces: [String] = []
-    // Three-finger trackpad swipe actions (MultitouchSupport). Each is an
-    // action line run through performAction; empty disables that swipe.
-    // Defaults: horizontal walks the column strip, vertical the workspaces.
-    var gestureSwipeLeft = "focus-column-right"
-    var gestureSwipeRight = "focus-column-left"
-    var gestureSwipeUp = "focus-workspace-up"
-    var gestureSwipeDown = "focus-workspace-down"
-    // Four-finger swipes. Empty = that swipe does nothing (niri's overview
-    // gesture is the obvious use, and it is what the default config shows).
-    var gestureFourLeft = ""
-    var gestureFourRight = ""
-    var gestureFourUp = ""
-    var gestureFourDown = ""
-    // Magic Mouse (or any mouse with a touch surface). Empty by default: on
-    // that surface a one-finger vertical drag is the scroll gesture, so
-    // binding it blind would fire on every scroll.
-    var gestureMouseOne: [SwipeDirection: String] = [:]
-    var gestureMouseTwo: [SwipeDirection: String] = [:]
     // Mod+wheel bindings (niri's Mod+WheelScroll*, mouse wheel only). Keyed
     // by "<mods>-<dir>": mods is mod / mod-ctrl / mod-shift, dir is
     // up/down/left/right. Value is an action line.
@@ -251,7 +273,6 @@ struct NigiriConfig {
     var overviewBackdrop = NSColor(calibratedWhite: 0.15, alpha: 1)
     // Set only when the config declares backdrop-color: unset means niri's
     // look, which is the desktop showing through behind the workspaces.
-    var overviewBackdropSet = false
     // niri's shadow section. macOS draws its own window shadow, so this maps
     // onto the one shadow nigiri actually renders: the focus ring's glow.
     // niri's layout { insert-hint }: default on, rgba(127,200,255,128)
@@ -262,11 +283,31 @@ struct NigiriConfig {
     var shadowOn = false
     var shadowSoftness: CGFloat = 30
     var shadowOffset = CGSize(width: 0, height: 5)
-    var shadowColor = NSColor(calibratedWhite: 0, alpha: 0.45)
+    // niri: rgba(0,0,0,0x77) (appearance.rs:363, #0007 in the default
+    // config) - 0.45 was an invented rounding. spread defaults to 5.
+    var shadowColor = NSColor(calibratedWhite: 0, alpha: 0x77 / 255.0)
+    var shadowSpread: CGFloat = 5
     // niri's environment: variables handed to everything nigiri spawns.
-    var environment: [String: String] = [:]
+    // nil = `K null` in the config, which UNSETS the variable
+    // (misc.rs:158-164, value: Option<String>); an empty string SETS it
+    // empty - "empty value = unset" was an invented rule.
+    var environment: [String: String?] = [:]
     // niri's screenshot-path, with strftime placeholders.
-    var screenshotPath = "~/Desktop/Screenshot %Y-%m-%d %H.%M.%S.png"
+    // niri's default (misc.rs:60-64); ~/Desktop with dots was invented.
+    var screenshotPath = "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+    // niri's hotkey-overlay {} (misc.rs:67-85): skip-at-startup keeps the
+    // "Important Hotkeys" panel from showing on launch (niri shows it every
+    // startup by default); hide-not-bound drops unbound entries. The whole
+    // section used to fall to "unknown top-level section".
+    var hotkeyOverlaySkipAtStartup = false
+    var hotkeyOverlayHideNotBound = false
+    // Whether any layer-rule declares place-within-backdrop true - niri's
+    // ONLY route for the wallpaper to appear behind the overview
+    // (layer-rule, wiki + appearance.rs:12: the default backdrop is plain
+    // gray 0.15). Defaulting to a captured desktop was invented.
+    var backdropShowsWallpaper = false
+    // niri's config-notification { disable-failed } (misc.rs:87-102).
+    var configNotificationDisableFailed = false
 
     // nigiri reads niri's OWN config.kdl when it's present, so one dotfile
     // drives niri on Linux and nigiri on macOS - the Wayland-only sections it
@@ -413,9 +454,10 @@ struct NigiriConfig {
             )
             mods.subtract(ignored)
         }
-        // niri has no unmodified wheel binds (a bare wheel is scrolling), so a
-        // combo without Mod is read as meaning it.
-        mods.insert("mod")
+        // niri allows genuinely unmodified wheel binds (binds.rs: any
+        // modifier set, including none) - a bare WheelScrollDown eats
+        // scrolling everywhere, which is the user's own call, exactly as
+        // upstream. The silent promotion to Mod rewrote that intent.
         return bindingKey(mods: mods, suffix: direction)
     }
 
@@ -434,17 +476,31 @@ struct NigiriConfig {
         else { return nil }
         var mods: HotkeyListener.Modifiers = []
         for part in parts.dropLast() {
-            switch part {
-            case "mod": mods.formUnion(modKey)
-            case "cmd", "command", "super": mods.insert(.command)
-            case "opt", "option", "alt": mods.insert(.option)
-            case "ctrl", "control": mods.insert(.control)
-            case "shift": mods.insert(.shift)
-            case "hyper": mods.formUnion([.command, .option, .control, .shift])
-            default: return nil
-            }
+            guard let mapped = modifierMask(part) else { return nil }
+            mods.formUnion(mapped)
         }
         return (keyCode, mods)
+    }
+
+    // niri's modifier words, spelling for spelling (ModKey's FromStr,
+    // input.rs:439-453) - cmd/command/opt/option/hyper were invented
+    // vocabulary and are gone. The macOS mapping: Super/Win is Command,
+    // Alt is Option; ISO_Level3_Shift (AltGr) is Option too, the closest
+    // macOS has; ISO_Level5_Shift has no analog and maps to Option with a
+    // note.
+    nonisolated static func modifierMask(_ word: String) -> HotkeyListener.Modifiers? {
+        switch word.lowercased() {
+        case "mod": return modKey
+        case "ctrl", "control": return .control
+        case "shift": return .shift
+        case "alt": return .option
+        case "super", "win": return .command
+        case "iso_level3_shift", "mod5": return .option
+        case "iso_level5_shift", "mod3":
+            print("[config] ISO_Level5_Shift has no macOS analog - using Option")
+            return .option
+        default: return nil
+        }
     }
 
     // input { mod-key }: read before any bind is parsed, since parseCombo
@@ -454,15 +510,8 @@ struct NigiriConfig {
     static func parseModifiers(_ names: [String]) -> HotkeyListener.Modifiers? {
         var mods: HotkeyListener.Modifiers = []
         for part in names {
-            switch part {
-            case "mod": mods.formUnion(modKey)
-            case "cmd", "command", "super", "win": mods.insert(.command)
-            case "opt", "option", "alt": mods.insert(.option)
-            case "ctrl", "control": mods.insert(.control)
-            case "shift": mods.insert(.shift)
-            case "hyper": mods.formUnion([.command, .option, .control, .shift])
-            default: return nil
-            }
+            guard let mapped = modifierMask(part) else { return nil }
+            mods.formUnion(mapped)
         }
         return mods
     }
@@ -486,8 +535,10 @@ struct NigiriConfig {
         case "mod": return "mod"
         case "ctrl", "control": return "ctrl"
         case "shift": return "shift"
-        case "cmd", "command", "super": return "cmd"
-        case "opt", "option", "alt": return "opt"
+        // niri's spellings only (input.rs:439-453); the canonical names
+        // stay the internal short forms the binding tables use.
+        case "super", "win": return "cmd"
+        case "alt", "iso_level3_shift", "mod5": return "opt"
         default: return nil
         }
     }
@@ -508,15 +559,32 @@ struct NigiriConfig {
     // so every colour with alpha (which is most of niri's own defaults, and
     // the only way to write a shadow or an insert hint) was dropped without
     // a word.
+    // niri parses colors with csscolorparser (appearance.rs:786-796): hex,
+    // the CSS named colors, and the rgb()/rgba()/hsl()/hsla() functions.
+    // Only hex used to be accepted, so valid niri configs lost colors with
+    // nothing but a log line.
     static func parseColor(_ raw: String) -> NSColor? {
-        var hex = raw.trimmingCharacters(in: .whitespaces)
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let compact = trimmed.lowercased().replacingOccurrences(of: " ", with: "")
+        if compact.hasPrefix("rgb") || compact.hasPrefix("hsl") {
+            if let c = functionColor(compact) { return c }
+            print("[config] invalid color, ignored: \(raw)")
+            return nil
+        }
+        if let namedHex = cssNamedColors[compact] { return hexColor(namedHex) }
+        if let c = hexColor(trimmed) { return c }
+        print("[config] invalid color, ignored: \(raw)")
+        return nil
+    }
+
+    private static func hexColor(_ raw: String) -> NSColor? {
+        var hex = raw
         if hex.hasPrefix("#") { hex.removeFirst() }
         // Shorthand doubles each digit: #f0a -> #ff00aa.
         if hex.count == 3 || hex.count == 4 {
             hex = hex.map { "\($0)\($0)" }.joined()
         }
         guard hex.count == 6 || hex.count == 8, let value = UInt32(hex, radix: 16) else {
-            print("[config] invalid color, ignored: \(raw)")
             return nil
         }
         let hasAlpha = hex.count == 8
@@ -527,6 +595,103 @@ struct NigiriConfig {
             blue: CGFloat((value >> shift) & 0xFF) / 255.0,
             alpha: hasAlpha ? CGFloat(value & 0xFF) / 255.0 : 1)
     }
+
+    // rgb(a)/hsl(a) in their CSS forms, whitespace already stripped;
+    // channels take 0-255 or %, alpha 0-1 or %, "," or "/" separators.
+    private static func functionColor(_ s: String) -> NSColor? {
+        guard let open = s.firstIndex(of: "("), s.hasSuffix(")") else { return nil }
+        let name = String(s[..<open])
+        let inner = s[s.index(after: open)..<s.index(before: s.endIndex)]
+        let comps = inner.split(whereSeparator: { $0 == "," || $0 == "/" }).map(String.init)
+        func channel(_ c: String) -> CGFloat? {
+            if c.hasSuffix("%") { return Double(c.dropLast()).map { CGFloat($0) / 100 * 255 } }
+            return Double(c).map { CGFloat($0) }
+        }
+        func unit(_ c: String) -> CGFloat? {
+            if c.hasSuffix("%") { return Double(c.dropLast()).map { CGFloat($0) / 100 } }
+            return Double(c).map { CGFloat($0) }
+        }
+        switch name {
+        case "rgb", "rgba":
+            guard comps.count >= 3, let r = channel(comps[0]), let g = channel(comps[1]),
+                let b = channel(comps[2])
+            else { return nil }
+            let a = comps.count >= 4 ? (unit(comps[3]) ?? 1) : 1
+            return NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: a)
+        case "hsl", "hsla":
+            guard comps.count >= 3,
+                let h = Double(comps[0].replacingOccurrences(of: "deg", with: "")),
+                let sat = unit(comps[1]), let light = unit(comps[2])
+            else { return nil }
+            let a = comps.count >= 4 ? (unit(comps[3]) ?? 1) : 1
+            // The CSS HSL->RGB algorithm.
+            let c = (1 - abs(2 * light - 1)) * sat
+            let hp = (h.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) / 60
+            let x = c * (1 - abs(CGFloat(hp).truncatingRemainder(dividingBy: 2) - 1))
+            let m = light - c / 2
+            let rgb: (CGFloat, CGFloat, CGFloat)
+            switch hp {
+            case 0..<1: rgb = (c, x, 0)
+            case 1..<2: rgb = (x, c, 0)
+            case 2..<3: rgb = (0, c, x)
+            case 3..<4: rgb = (0, x, c)
+            case 4..<5: rgb = (x, 0, c)
+            default: rgb = (c, 0, x)
+            }
+            return NSColor(calibratedRed: rgb.0 + m, green: rgb.1 + m, blue: rgb.2 + m, alpha: a)
+        default: return nil
+        }
+    }
+
+    // The CSS named colors (Level 4), the same set csscolorparser accepts.
+    static let cssNamedColors: [String: String] = [
+        "aliceblue": "#f0f8ff", "antiquewhite": "#faebd7", "aqua": "#00ffff",
+        "aquamarine": "#7fffd4", "azure": "#f0ffff", "beige": "#f5f5dc", "bisque": "#ffe4c4",
+        "black": "#000000", "blanchedalmond": "#ffebcd", "blue": "#0000ff",
+        "blueviolet": "#8a2be2", "brown": "#a52a2a", "burlywood": "#deb887",
+        "cadetblue": "#5f9ea0", "chartreuse": "#7fff00", "chocolate": "#d2691e",
+        "coral": "#ff7f50", "cornflowerblue": "#6495ed", "cornsilk": "#fff8dc",
+        "crimson": "#dc143c", "cyan": "#00ffff", "darkblue": "#00008b", "darkcyan": "#008b8b",
+        "darkgoldenrod": "#b8860b", "darkgray": "#a9a9a9", "darkgreen": "#006400",
+        "darkgrey": "#a9a9a9", "darkkhaki": "#bdb76b", "darkmagenta": "#8b008b",
+        "darkolivegreen": "#556b2f", "darkorange": "#ff8c00", "darkorchid": "#9932cc",
+        "darkred": "#8b0000", "darksalmon": "#e9967a", "darkseagreen": "#8fbc8f",
+        "darkslateblue": "#483d8b", "darkslategray": "#2f4f4f", "darkslategrey": "#2f4f4f",
+        "darkturquoise": "#00ced1", "darkviolet": "#9400d3", "deeppink": "#ff1493",
+        "deepskyblue": "#00bfff", "dimgray": "#696969", "dimgrey": "#696969",
+        "dodgerblue": "#1e90ff", "firebrick": "#b22222", "floralwhite": "#fffaf0",
+        "forestgreen": "#228b22", "fuchsia": "#ff00ff", "gainsboro": "#dcdcdc",
+        "ghostwhite": "#f8f8ff", "gold": "#ffd700", "goldenrod": "#daa520", "gray": "#808080",
+        "green": "#008000", "greenyellow": "#adff2f", "grey": "#808080", "honeydew": "#f0fff0",
+        "hotpink": "#ff69b4", "indianred": "#cd5c5c", "indigo": "#4b0082", "ivory": "#fffff0",
+        "khaki": "#f0e68c", "lavender": "#e6e6fa", "lavenderblush": "#fff0f5",
+        "lawngreen": "#7cfc00", "lemonchiffon": "#fffacd", "lightblue": "#add8e6",
+        "lightcoral": "#f08080", "lightcyan": "#e0ffff", "lightgoldenrodyellow": "#fafad2",
+        "lightgray": "#d3d3d3", "lightgreen": "#90ee90", "lightgrey": "#d3d3d3",
+        "lightpink": "#ffb6c1", "lightsalmon": "#ffa07a", "lightseagreen": "#20b2aa",
+        "lightskyblue": "#87cefa", "lightslategray": "#778899", "lightslategrey": "#778899",
+        "lightsteelblue": "#b0c4de", "lightyellow": "#ffffe0", "lime": "#00ff00",
+        "limegreen": "#32cd32", "linen": "#faf0e6", "magenta": "#ff00ff", "maroon": "#800000",
+        "mediumaquamarine": "#66cdaa", "mediumblue": "#0000cd", "mediumorchid": "#ba55d3",
+        "mediumpurple": "#9370db", "mediumseagreen": "#3cb371", "mediumslateblue": "#7b68ee",
+        "mediumspringgreen": "#00fa9a", "mediumturquoise": "#48d1cc",
+        "mediumvioletred": "#c71585", "midnightblue": "#191970", "mintcream": "#f5fffa",
+        "mistyrose": "#ffe4e1", "moccasin": "#ffe4b5", "navajowhite": "#ffdead",
+        "navy": "#000080", "oldlace": "#fdf5e6", "olive": "#808000", "olivedrab": "#6b8e23",
+        "orange": "#ffa500", "orangered": "#ff4500", "orchid": "#da70d6",
+        "palegoldenrod": "#eee8aa", "palegreen": "#98fb98", "paleturquoise": "#afeeee",
+        "palevioletred": "#db7093", "papayawhip": "#ffefd5", "peachpuff": "#ffdab9",
+        "peru": "#cd853f", "pink": "#ffc0cb", "plum": "#dda0dd", "powderblue": "#b0e0e6",
+        "purple": "#800080", "rebeccapurple": "#663399", "red": "#ff0000",
+        "rosybrown": "#bc8f8f", "royalblue": "#4169e1", "saddlebrown": "#8b4513",
+        "salmon": "#fa8072", "sandybrown": "#f4a460", "seagreen": "#2e8b57",
+        "seashell": "#fff5ee", "sienna": "#a0522d", "silver": "#c0c0c0", "skyblue": "#87ceeb",
+        "slateblue": "#6a5acd", "slategray": "#708090", "slategrey": "#708090",
+        "snow": "#fffafa", "springgreen": "#00ff7f", "steelblue": "#4682b4", "tan": "#d2b48c",
+        "teal": "#008080", "thistle": "#d8bfd8", "tomato": "#ff6347", "transparent": "#00000000",
+        "turquoise": "#40e0d0", "violet": "#ee82ee", "wheat": "#f5deb3", "white": "#ffffff",
+        "whitesmoke": "#f5f5f5", "yellow": "#ffff00", "yellowgreen": "#9acd32",
+    ]
 
     // The whole file as one token stream: words (quotes stripped, spaces
     // preserved inside them), the structural characters { } ; as their own

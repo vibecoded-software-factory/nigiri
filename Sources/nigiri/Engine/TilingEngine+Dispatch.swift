@@ -9,9 +9,15 @@ extension TilingEngine {
     // action names are accepted where ours historically differed, and
     // percent arguments take niri's quoted "+10%"/"-10%" form as well as
     // plain integers.
-    func performAction(_ line: String) {
+    // Returns whether the action was RECOGNIZED (niri's contract: an
+    // unknown or undeserializable action is an Err over IPC, src/ipc/
+    // server.rs:205-214 - answering Ok to garbage hid every client bug).
+    // A recognized action that no-ops (focus at an edge) is still true,
+    // exactly like niri.
+    @discardableResult
+    func performAction(_ line: String) -> Bool {
         let parts = line.split(separator: " ")
-        guard let name = parts.first.map(String.init) else { return }
+        guard let name = parts.first.map(String.init) else { return false }
         // niri's SizeChange, verbatim from its four forms: an argument that
         // STARTS with + or - adjusts, anything else SETS; ending in % means
         // a proportion, otherwise it is fixed pixels. nigiri used to strip
@@ -23,6 +29,9 @@ extension TilingEngine {
             return SizeChange.parse(String(parts[index]))
         }
         let intArg = parts.count > 1 ? Int(parts[1]) : nil
+        // The optional window id most window actions carry (niri's
+        // `id: Option<u64>`): resolved by windowTarget inside each handler.
+        var windowIDArg: UInt64? { kvArg("id").flatMap { UInt64($0) } }
         // A niri reference arg carried as `id=5` / `index=2` / `name=x` (see the
         // Action decoder): pull the value for a given key out of the tokens.
         func kvArg(_ key: String) -> String? {
@@ -31,24 +40,48 @@ extension TilingEngine {
                 String($0.dropFirst(prefix.count))
             }
         }
+        // A WorkspaceReferenceArg ({Id|Index|Name}, flattened by the decoder
+        // to id=/index=/name=) resolved to a 1-based workspace number, with
+        // the positional spellings as fallback. move-*-to-workspace only read
+        // the positional forms, so the JSON shape - whose `focus` key sorts
+        // BEFORE `reference` and pushes it out of position - moved nothing.
+        func workspaceRefArg() -> Int? {
+            if let ref = kvArg("id"), let id = UInt64(ref) {
+                return workspaces.firstIndex { $0.id == id }.map { $0 + 1 }
+            }
+            if let ref = kvArg("index"), let n = Int(ref) { return n }
+            if let ref = kvArg("name") { return workspaceIndex(named: ref).map { $0 + 1 } }
+            if let n = intArg { return n }
+            if parts.count > 1, !parts[1].contains("=") {
+                return workspaceIndex(named: String(parts[1])).map { $0 + 1 }
+            }
+            return nil
+        }
         // While the panel overview is up, navigation actions drive the
         // selection ring live (niri's zoomed-out camera) and a few window
-        // actions (close, ...) act on the selection in place. EVERY other
-        // keybinding bypasses to the SELECTED window: focus it in the model
-        // first (synchronously, so a cross-workspace selection doesn't start
-        // an animated switch that the isTransitioningWorkspace guards would
-        // then swallow the action behind), then collapse the overview and let
-        // the action run on it.
+        // actions (close, ...) act on the selection in place. Every OTHER
+        // action runs on the selected window with the overview STAYING
+        // OPEN, exactly like niri - the overview is just the zoomed-out
+        // camera over the same scene, and src/input/mod.rs has no collapse
+        // path (it closes only on toggle, click-through or gesture).
+        // Collapsing on every non-navigation action was invented behavior
+        // (audit ACT-8). The selection is synced into the model first (the
+        // selection IS the focus), and the panel is rebuilt after the
+        // action so the thumbnails show the mutated layout.
+        var refreshOverviewAfterAction = false
         if isOverviewActive {
-            if handleOverviewPanelAction(name, parts) { return }
-            // Infrastructure actions are not the user acting on a window: a
-            // panel's periodic reserve-zone heartbeat arriving through this
-            // same dispatch used to bypass+collapse the overview within
-            // seconds of opening it (instantly, with a chatty client).
-            let infrastructure: Set<String> = ["toggle-overview", "reserve-zone", "clear-zone"]
+            if handleOverviewPanelAction(name, parts) { return true }
+            // Infrastructure actions are not the user acting on a window
+            // (a panel's periodic reserve-zone heartbeat must not touch the
+            // overview), and the open/close/toggle actions manage the
+            // overview themselves.
+            let infrastructure: Set<String> = [
+                "toggle-overview", "open-overview", "close-overview",
+                "reserve-zone", "clear-zone",
+            ]
             if !infrastructure.contains(name) {
                 overviewFocusSelectedInModel()
-                exitOverview()
+                refreshOverviewAfterAction = true
             }
         }
         switch name {
@@ -87,6 +120,26 @@ extension TilingEngine {
         case "focus-window-bottom": focusWindowEdge(top: false)
         case "focus-window-down-or-top": focusWindowWrapping(delta: 1)
         case "focus-window-up-or-bottom": focusWindowWrapping(delta: -1)
+        // niri's compound -or- family (mod.rs:1975-2076): the inner move,
+        // falling through when it did not move. They all landed on
+        // unknown-action before.
+        case "focus-window-in-column":
+            if let n = intArg { focusWindowInColumn(n) }
+        case "focus-window-down-or-column-left": focusWindowOrColumn(deltaY: 1, columnDelta: -1)
+        case "focus-window-down-or-column-right": focusWindowOrColumn(deltaY: 1, columnDelta: 1)
+        case "focus-window-up-or-column-left": focusWindowOrColumn(deltaY: -1, columnDelta: -1)
+        case "focus-window-up-or-column-right": focusWindowOrColumn(deltaY: -1, columnDelta: 1)
+        case "focus-window-or-workspace-down": focusWindowOrWorkspace(delta: 1)
+        case "focus-window-or-workspace-up": focusWindowOrWorkspace(delta: -1)
+        case "focus-column-or-monitor-left": focusColumnOrMonitor(delta: -1, direction: .left)
+        case "focus-column-or-monitor-right": focusColumnOrMonitor(delta: 1, direction: .right)
+        case "focus-window-or-monitor-up": focusWindowOrMonitor(delta: -1, direction: .up)
+        case "focus-window-or-monitor-down": focusWindowOrMonitor(delta: 1, direction: .down)
+        case "move-window-down-or-to-workspace-down": moveWindowOrToWorkspace(delta: 1)
+        case "move-window-up-or-to-workspace-up": moveWindowOrToWorkspace(delta: -1)
+        case "move-column-left-or-to-monitor-left": moveColumnOrToMonitor(delta: -1, direction: .left)
+        case "move-column-right-or-to-monitor-right":
+            moveColumnOrToMonitor(delta: 1, direction: .right)
         case "focus-window-previous": focusWindowPrevious()
         case "focus-window":
             // niri's FocusWindow { id } (niri-ipc/src/lib.rs). It used to
@@ -96,9 +149,8 @@ extension TilingEngine {
                 focusWindowByID(id)
             } else {
                 print("[action] focus-window needs id=<window id>")
+                return false
             }
-        case "focus-window-by-id":
-            if parts.count > 1, let id = UInt64(parts[1]) { focusWindowByID(id) }
         case "focus-floating": focusLayer(floating: true)
         case "focus-tiling": focusLayer(floating: false)
         case "swap-window-left": swapWindow(delta: -1)
@@ -109,16 +161,26 @@ extension TilingEngine {
             if let n = intArg { moveWorkspaceToIndex(n) }
         case "move-window-to-workspace":
             let follow = !parts.contains("focus=false")
-            if let n = intArg {
-                moveWindowToWorkspace(n, focus: follow)
-            } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
-                moveWindowToWorkspace(idx + 1, focus: follow)
+            guard let n = workspaceRefArg() else {
+                print("[action] move-window-to-workspace needs a workspace reference")
+                return false
             }
+            moveWindowToWorkspace(n, focus: follow, id: kvArg("window-id").flatMap { UInt64($0) })
         case "move-window-to-workspace-up": moveWindowToWorkspace(activeWorkspaceIndex)
         case "move-window-to-workspace-down": moveWindowToWorkspace(activeWorkspaceIndex + 2)
-        case "move-window-to-floating": moveWindow(toFloating: true)
-        case "move-window-to-tiling": moveWindow(toFloating: false)
-        case "center-window": centerWindow()
+        case "move-window-to-floating": moveWindow(toFloating: true, id: windowIDArg)
+        case "move-window-to-tiling": moveWindow(toFloating: false, id: windowIDArg)
+        case "center-window": centerWindow(id: windowIDArg)
+        case "move-floating-window":
+            guard let x = sizeArg(1), let y = sizeArg(2) else {
+                print("[action] move-floating-window <x> <y> (\"10\", \"+10\", \"-25\")")
+                return false
+            }
+            return moveFloatingWindowPosition(
+                x: x, y: y,
+                of: windowIDArg.flatMap { id in
+                    windowTarget(id: id, action: "move-floating-window")?.window
+                })
         case "set-column-display":
             setColumnDisplay(tabbed: parts.count > 1 && parts[1] == "tabbed")
         case "set-workspace-name":
@@ -126,12 +188,31 @@ extension TilingEngine {
         case "unset-workspace-name": setWorkspaceName(nil)
         case "open-overview": if !isOverviewActive { enterOverview() }
         case "close-overview": if isOverviewActive { exitOverview() }
-        case "switch-preset-window-height-back": switchPresetWindowHeight(delta: -1)
-        case "switch-preset-window-width-back": switchPresetWindowWidth(delta: -1)
+        case "switch-preset-window-height-back": switchPresetWindowHeight(delta: -1, id: windowIDArg)
+        case "switch-preset-window-width-back": switchPresetWindowWidth(delta: -1, id: windowIDArg)
         case "focus-column-first": focusColumnEdge(first: true)
         case "focus-column-last": focusColumnEdge(first: false)
         // niri's focus-monitor-* / move-column-to-monitor-* (multi-monitor).
         // move-window-to-monitor is aliased to the column form.
+        case "focus-monitor-next": focusMonitorRelative(1)
+        case "focus-monitor-previous": focusMonitorRelative(-1)
+        case "move-column-to-monitor-next", "move-window-to-monitor-next":
+            moveColumnToMonitorRelative(1)
+        case "move-column-to-monitor-previous", "move-window-to-monitor-previous":
+            moveColumnToMonitorRelative(-1)
+        case "move-workspace-to-monitor-left": moveWorkspaceToMonitor(.left)
+        case "move-workspace-to-monitor-right": moveWorkspaceToMonitor(.right)
+        case "move-workspace-to-monitor-up": moveWorkspaceToMonitor(.up)
+        case "move-workspace-to-monitor-down": moveWorkspaceToMonitor(.down)
+        case "move-workspace-to-monitor-next": moveWorkspaceToMonitorRelative(1)
+        case "move-workspace-to-monitor-previous": moveWorkspaceToMonitorRelative(-1)
+        // niri's switch-layout next/prev/<index>: the keyboard layout, not
+        // a window layout - TIS is the macOS side of xkb.
+        case "switch-layout":
+            guard parts.count > 1, switchKeyboardLayout(String(parts[1])) else {
+                print("[action] switch-layout: next, prev, or a 0-based index")
+                return false
+            }
         case "focus-monitor-left": focusMonitor(.left)
         case "focus-monitor-right": focusMonitor(.right)
         case "focus-monitor-up": focusMonitor(.up)
@@ -144,17 +225,11 @@ extension TilingEngine {
             // niri's FocusWorkspace takes a reference by Id, Index or Name; a
             // bar clicking a workspace sends the stable Id, which is NOT the
             // 1-based position focusWorkspace expects, so resolve it.
-            if let ref = kvArg("id"), let id = UInt64(ref) {
-                focusWorkspace(byId: id)
-            } else if let ref = kvArg("index"), let n = Int(ref) {
-                focusWorkspace(n)
-            } else if let ref = kvArg("name"), let idx = workspaceIndex(named: ref) {
-                focusWorkspace(idx + 1)
-            } else if let n = intArg {
-                focusWorkspace(n)
-            } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
-                focusWorkspace(idx + 1)
+            guard let n = workspaceRefArg() else {
+                print("[action] focus-workspace needs a workspace reference")
+                return false
             }
+            focusWorkspace(n)
         case "focus-workspace-previous": focusWorkspacePrevious()
         case "focus-workspace-up": focusWorkspaceRelative(delta: -1)
         case "focus-workspace-down": focusWorkspaceRelative(delta: 1)
@@ -183,11 +258,11 @@ extension TilingEngine {
         case "move-column-to-workspace":
             // niri's `focus` parameter, default true (niri-ipc/src/lib.rs).
             let follow = !parts.contains("focus=false")
-            if let n = intArg {
-                moveColumnToWorkspace(n, focus: follow)
-            } else if parts.count > 1, let idx = workspaceIndex(named: String(parts[1])) {
-                moveColumnToWorkspace(idx + 1, focus: follow)
+            guard let n = workspaceRefArg() else {
+                print("[action] move-column-to-workspace needs a workspace reference")
+                return false
             }
+            moveColumnToWorkspace(n, focus: follow)
         case "move-column-to-workspace-up":
             moveColumnToWorkspace(activeWorkspaceIndex, focus: !parts.contains("focus=false"))
         case "move-column-to-workspace-down":
@@ -244,51 +319,51 @@ extension TilingEngine {
                 print("[strut] clear \(parts[1]) (total: \(reservedStruts.count))")
                 applyStrutChange()
             }
-        case "consume-or-expel-window-left", "consume-or-expel-left": consumeOrExpel(delta: -1)
-        case "consume-or-expel-window-right", "consume-or-expel-right": consumeOrExpel(delta: 1)
+        case "consume-or-expel-window-left": consumeOrExpel(delta: -1, id: windowIDArg)
+        case "consume-or-expel-window-right": consumeOrExpel(delta: 1, id: windowIDArg)
         case "consume-window-into-column": consumeWindowIntoColumn()
         case "expel-window-from-column": expelFromColumn()
         case "maximize-column": maximizeColumnToggle()
-        case "maximize-window-to-edges": maximizeWindowToEdges()
-        case "fullscreen-window": fullscreenWindow()
-        case "toggle-windowed-fullscreen": toggleWindowedFullscreen()
+        case "maximize-window-to-edges": maximizeWindowToEdges(id: windowIDArg)
+        case "fullscreen-window": fullscreenWindow(id: windowIDArg)
+        case "toggle-windowed-fullscreen": toggleWindowedFullscreen(id: windowIDArg)
         // macOS-only escape hatch: the real fullscreen Space, which takes
         // the window OUT of the tiling model. niri has no counterpart.
         case "native-fullscreen": nativeFullscreenWindow()
         case "close-window": closeWindow(id: kvArg("id").flatMap { UInt64($0) })
         case "switch-preset-column-width": switchPresetColumnWidth()
         case "switch-preset-column-width-back": switchPresetColumnWidth(delta: -1)
-        case "switch-preset-window-height": switchPresetWindowHeight()
-        case "switch-preset-window-width": switchPresetWindowWidth()
+        case "switch-preset-window-height": switchPresetWindowHeight(id: windowIDArg)
+        case "switch-preset-window-width": switchPresetWindowWidth(id: windowIDArg)
+        // set-window-width is niri's window-addressed spelling
+        // (SetWindowWidth, scrolling.rs:2607): for a tiled window its width
+        // IS its column's, and floating resizes the window - the same two
+        // paths set-column-width takes here. It used to fall to
+        // unknown-action, so a niri bind for it silently did nothing.
         case "set-column-width":
             guard let change = sizeArg(1) else {
-                print("[action] set-column-width: \"50%\", \"+10%\", \"1000\" o \"+100\""); return
+                print("[action] \(name): \"50%\", \"+10%\", \"1000\" or \"+100\""); return false
             }
             if workspace.isFloatingActive {
-                resizeFloatingWindow(widthDeltaPercent: change.asFloatingDelta)
+                resizeFloatingWindow(width: change)
             } else {
                 setColumnWidth(change)
             }
+        case "set-window-width":
+            guard let change = sizeArg(1) else {
+                print("[action] \(name): \"50%\", \"+10%\", \"1000\" or \"+100\""); return false
+            }
+            setWindowWidth(change, id: windowIDArg)
         case "set-window-height":
             guard let change = sizeArg(1) else {
-                print("[action] set-window-height: \"50%\", \"+10%\", \"1000\" o \"+100\""); return
+                print("[action] set-window-height: \"50%\", \"+10%\", \"1000\" or \"+100\""); return false
             }
-            if workspace.isFloatingActive {
-                resizeFloatingWindow(heightDeltaPercent: change.asFloatingDelta)
-            } else {
-                setWindowHeight(change)
-            }
-        case "reset-window-height": resetWindowHeight()
+            setWindowHeight(change, id: windowIDArg)
+        case "reset-window-height": resetWindowHeight(id: windowIDArg)
         case "expand-column-to-available-width": expandColumnToAvailableWidth()
-        case "resize-edge":
-            if parts.count > 2, let d = sizeArg(2)?.asFloatingDelta {
-                resizeEdge(String(parts[1]), deltaPercent: d)
-            } else {
-                print("[action] usage: resize-edge <left|right|top|bottom> <±percent>")
-            }
         case "center-column": centerColumn()
         case "center-visible-columns": centerVisibleColumns()
-        case "toggle-window-floating": toggleWindowFloating()
+        case "toggle-window-floating": toggleWindowFloating(id: windowIDArg)
         case "switch-focus-between-floating-and-tiling": switchFocusBetweenFloatingAndTiling()
         case "toggle-column-tabbed-display": toggleColumnTabbedDisplay()
         case "toggle-overview": toggleOverview()
@@ -296,21 +371,49 @@ extension TilingEngine {
         case "spawn":
             // argv, no shell - niri's spawn.
             let command = line.dropFirst(name.count).trimmingCharacters(in: .whitespaces)
-            guard !command.isEmpty else { print("[action] spawn needs a command"); return }
+            guard !command.isEmpty else { print("[action] spawn needs a command"); return false }
             spawn(command)
         case "spawn-sh":
             // the whole line through a shell - niri's spawn-sh.
             let command = line.dropFirst(name.count).trimmingCharacters(in: .whitespaces)
-            guard !command.isEmpty else { print("[action] spawn-sh needs a command"); return }
+            guard !command.isEmpty else { print("[action] spawn-sh needs a command"); return false }
             spawnShell(command)
-        case "screenshot": takeScreenshot(.interactive)
-        case "screenshot-screen": takeScreenshot(.screen)
-        case "screenshot-window": takeScreenshot(.window)
+        // niri's screenshot arguments (lib.rs:224-285): show-pointer and
+        // write-to-disk as flags, id for the window variant, and an
+        // optional absolute path (positional after the decoder's flatten).
+        case "screenshot", "screenshot-screen", "screenshot-window":
+            let kind: ShotKind =
+                name == "screenshot" ? .interactive : (name == "screenshot-screen" ? .screen : .window)
+            takeScreenshot(
+                kind,
+                id: kvArg("id").flatMap { UInt64($0) },
+                writeToDisk: kvArg("write-to-disk").map { $0 == "true" } ?? true,
+                showPointer: kvArg("show-pointer").map { $0 == "true" },
+                pathOverride: parts.dropFirst().first { !$0.contains("=") }.map(String.init))
         case "quit":
+            // niri prompts before quitting unless skip-confirmation
+            // (binds.rs, Quit { skip_confirmation }); this exited
+            // unconditionally - one mistyped bind away from dropping the
+            // whole session's layout.
+            let skip = parts.contains { $0 == "skip-confirmation=true" || $0 == "--skip-confirmation" }
+            if !skip {
+                let alert = NSAlert()
+                alert.messageText = "Quit nigiri?"
+                alert.informativeText = "The window layout will be released."
+                alert.addButton(withTitle: "Quit")
+                alert.addButton(withTitle: "Cancel")
+                NSApp.activate(ignoringOtherApps: true)
+                guard alert.runModal() == .alertFirstButtonReturn else {
+                    print("quit: cancelled")
+                    return true
+                }
+            }
             print("quit: restoring stashed windows and exiting")
             restoreStashedWindows()
             exit(0)
-        default: print("[action] unknown: \(line)")
+        default:
+            print("[action] unknown: \(line)")
+            return false
         }
 
         // niri emits its window events the moment the state mutates. The
@@ -321,6 +424,12 @@ extension TilingEngine {
         // a pure model walk - no AX reads - so running it after every action
         // is cheap, and a no-change action broadcasts nothing.
         broadcastWindowDiff()
+        // The overview stayed open across the action (niri's contract);
+        // rebuild the panel so it shows the layout the action produced.
+        if refreshOverviewAfterAction, isOverviewActive {
+            presentOverviewPanel(select: focusedManagedWindow())
+        }
+        return true
     }
 
     // Applies a loaded config: layout knobs, ring style, rules, and a full
@@ -348,55 +457,98 @@ extension TilingEngine {
         ColumnLayoutEngine.alwaysCenterSingleColumn = config.alwaysCenterSingleColumn
         Column.defaultTabbed = config.defaultColumnTabbed
         emptyWorkspaceAboveFirst = config.emptyWorkspaceAboveFirst
+        workspaceAutoBackAndForth = config.workspaceAutoBackAndForth
         screenshotPath = config.screenshotPath
         Self.spawnEnvironmentOverrides = config.environment
         overviewPanel.applyStyle(
             zoom: config.overviewZoom, backdrop: config.overviewBackdrop,
-            useWallpaper: !config.overviewBackdropSet)
+            // The wallpaper behind the overview needs niri's own opt-in: a
+            // layer-rule with place-within-backdrop (audit ACT-15).
+            useWallpaper: config.backdropShowsWallpaper,
+            ringColor: config.ringFrom, ringWidth: config.ringWidth,
+            insertHintColor: config.insertHintColor)
         insertHint.applyStyle(off: config.insertHintOff, color: config.insertHintColor)
         ring.applyShadow(
-            on: config.shadowOn, softness: config.shadowSoftness,
+            on: config.shadowOn, softness: config.shadowSoftness, spread: config.shadowSpread,
             offset: config.shadowOffset, color: config.shadowColor)
         ColumnLayoutEngine.presetWindowHeightSizes = config.presetWindowHeightSizes
-        tabIndicators.applyStyle(active: config.tabActiveColor, inactive: config.tabInactiveColor)
-        ColumnLayoutEngine.defaultColumnWidth = config.defaultColumnWidth
+        // Unset tab colors derive from the decoration the column wears
+        // (tab_indicator.rs:363-406): the focus ring's, or the border's
+        // when the ring is off and the border on.
+        let tabBaseActive = config.ringOff && config.borderOn ? config.borderActiveColor : config.ringFrom
+        let tabBaseInactive =
+            config.ringOff && config.borderOn ? config.borderInactiveColor : config.ringInactiveColor
+        tabIndicators.applyStyle(
+            active: config.tabActiveColor ?? tabBaseActive,
+            inactive: config.tabInactiveColor ?? tabBaseInactive,
+            off: config.tabIndicatorOff,
+            hideWhenSingleTab: config.tabHideWhenSingleTab,
+            placeWithinColumn: config.tabPlaceWithinColumn,
+            gap: config.tabGap, width: config.tabWidth,
+            lengthProportion: config.tabLengthProportion,
+            position: config.tabPosition,
+            gapsBetweenTabs: config.tabGapsBetweenTabs,
+            cornerRadius: config.tabCornerRadius)
+        ColumnLayoutEngine.defaultColumnWidthSpec = config.defaultColumnWidth
+        if case .proportion(let p) = config.defaultColumnWidth {
+            ColumnLayoutEngine.defaultColumnWidth = p
+        } else {
+            // fixed/natural resolve per-window at adoption; 0.5 remains the
+            // windowless fallback (drop hints).
+            ColumnLayoutEngine.defaultColumnWidth = 0.5
+        }
         // niri's `focus-ring { off }`, parsed since the section existed and
         // never applied: the ring kept being drawn at its configured width.
         // Width 0 is how every other decoration here spells "off" (see the
         // inactive borders below), so it needs no second switch.
-        let effectiveRingWidth = config.ringOff ? 0 : config.ringWidth
-        focusRingWidth = effectiveRingWidth
+        //
+        // With the ring off and the border ON, niri's focused window wears
+        // the border's ACTIVE color - rendered here through the ring
+        // overlay, the layer that owns the focused window's decoration.
+        // (With BOTH on, niri stacks border under ring; one overlay per
+        // window here, so the ring wins on the focused window.)
         macOSWindowCornerRadius = config.cornerRadius
-        ring.applyStyle(width: effectiveRingWidth, from: config.ringFrom, to: config.ringTo)
-        windowRules = config.rules
-        // niri's named workspaces: pre-create/name the first N slots so they
-        // can be targeted by name. Never removes windows - only labels.
-        // Cleared first: names travel with the Workspace object through
-        // move-workspace-up/down, so re-stamping by position on every reload
-        // relabelled whichever workspaces had been swapped, and a name
-        // deleted from the config was never dropped.
-        for ws in workspaces { ws.name = nil }
-        for (i, name) in config.namedWorkspaces.enumerated() {
-            while workspaces.count <= i { workspaces.append(Workspace()) }
-            workspaces[i].name = name
+        if config.ringOff, config.borderOn {
+            focusRingWidth = config.borderWidth
+            ring.applyStyle(
+                width: config.borderWidth,
+                from: config.borderActiveColor, to: config.borderActiveColor)
+        } else {
+            let effectiveRingWidth = config.ringOff ? 0 : config.ringWidth
+            focusRingWidth = effectiveRingWidth
+            ring.applyStyle(
+                width: effectiveRingWidth, from: config.ringFrom, to: config.ringTo,
+                angle: config.ringAngle)
         }
-        gestureSwipeLeft = config.gestureSwipeLeft
-        gestureSwipeRight = config.gestureSwipeRight
-        gestureSwipeUp = config.gestureSwipeUp
-        gestureSwipeDown = config.gestureSwipeDown
+        windowRules = config.rules
+        // niri's reload contract for named workspaces (niri.rs:1446-1466):
+        // a name REMOVED from the config is unnamed - the workspace stays,
+        // now ordinary, and dies when it empties (unname_workspace); a name
+        // still present keeps riding its Workspace object wherever
+        // move-workspace-up/down took it; a name NEW to the config gets a
+        // fresh empty workspace inserted at the TOP (ensure_named_workspace
+        // -> insert_workspace(ws, 0)). The old stamping-by-position
+        // relabelled whichever workspaces had been swapped and wiped
+        // set-workspace-name names on every reload.
+        for name in configNamedWorkspaces where !config.namedWorkspaces.contains(name) {
+            workspaces.first { $0.name == name }?.name = nil
+        }
+        for name in config.namedWorkspaces where !workspaces.contains(where: { $0.name == name }) {
+            let ws = Workspace()
+            ws.name = name
+            workspaces.insert(ws, at: 0)
+            // The active workspace must not silently change identity.
+            activeWorkspaceIndex += 1
+            previousWorkspaceIndex += 1
+        }
+        configNamedWorkspaces = config.namedWorkspaces
         wheelActions = config.wheelBindings
         mouseActions = config.mouseBindings
-        gestureFourLeft = config.gestureFourLeft
-        gestureFourRight = config.gestureFourRight
-        gestureFourUp = config.gestureFourUp
-        gestureFourDown = config.gestureFourDown
         hotCornersOff = config.hotCornersOff
         hotCornerTopLeft = config.hotCornerTopLeft
         hotCornerTopRight = config.hotCornerTopRight
         hotCornerBottomLeft = config.hotCornerBottomLeft
         hotCornerBottomRight = config.hotCornerBottomRight
-        gestureMouseOne = config.gestureMouseOne
-        gestureMouseTwo = config.gestureMouseTwo
         MouseDragController.modMask = config.modKey
         configuredAnimations = config.animations
         animationsOff = config.animationsOff
@@ -408,13 +560,18 @@ extension TilingEngine {
         // niri defaults to, and which this user sets - left every unfocused
         // window bare. The overlay is now driven by whichever decoration is
         // actually configured, ring first.
-        if config.borderWidth > 0 {
-            borders.applyStyle(width: config.borderWidth, color: config.borderInactiveColor)
+        if config.borderOn {
+            borders.applyStyle(
+                width: config.borderWidth, color: config.borderInactiveColor,
+                activeColor: config.borderActiveColor)
+            borderActiveEnabled = true
         } else if !config.ringOff {
             borders.applyStyle(width: config.ringWidth, color: config.ringInactiveColor)
+            borderActiveEnabled = false
         } else {
             borders.applyStyle(width: 0, color: config.borderInactiveColor)
         }
+        configErrorNotification.disableFailed = config.configNotificationDisableFailed
         applyInputConfig(config)
         listener.unregisterAll()
         bindLastFire = [:]
@@ -444,18 +601,15 @@ extension TilingEngine {
         print(
             "binds resolved against layout: \(NigiriConfig.layoutKeyCodesSource)\(config.bindsLayout.map { " (pinned in config: \($0))" } ?? "")"
         )
-        let bound = Set(
-            config.binds.compactMap { bind -> String? in
-                guard let first = bind.action.split(separator: " ").first.map(String.init) else { return nil }
-                return actionAliases[first] ?? first
-            })
         let wasVisible = hotkeyOverlay.isVisible
         if wasVisible { hotkeyOverlay.toggle() }
-        // niri's hotkey-overlay-title labels the bind in the overlay.
+        // niri's CURATED "Important Hotkeys" list (hotkey_overlay.rs), not
+        // the whole bind table; hotkey-overlay-title renames or (null)
+        // hides a bind, hide-not-bound drops unbound entries.
         hotkeyOverlay = HotkeyOverlay(
-            bindings:
-                config.binds.filter { !$0.hiddenFromOverlay }.map { ($0.combo, $0.title ?? $0.action) }
-                + actionCatalog.filter { !bound.contains($0) }.map { ("", $0) })
+            entries: HotkeyOverlay.curated(
+                binds: config.binds.map { ($0.combo, $0.action, $0.title, $0.hiddenFromOverlay) },
+                hideNotBound: config.hotkeyOverlayHideNotBound))
         if wasVisible { hotkeyOverlay.toggle() }
         if !initial {
             reflow()

@@ -85,7 +85,10 @@ final class WindowGhost {
             return
         }
         scale.fromValue = CATransform3DIdentity
-        scale.toValue = CATransform3DMakeScale(0.85, 0.85, 1)
+        // niri's built-in close ends at scale 0.8: closing_window.rs:289
+        // computes (1 - progress)/5 + 0.8, which runs 1.0 -> 0.8. 0.85 was
+        // an invented stop.
+        scale.toValue = CATransform3DMakeScale(0.8, 0.8, 1)
         scale.fillMode = .forwards
         scale.isRemovedOnCompletion = false
         fade.fromValue = 1

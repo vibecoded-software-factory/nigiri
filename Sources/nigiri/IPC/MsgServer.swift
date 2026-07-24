@@ -12,7 +12,14 @@ final class MsgServer {
 
     private var listenSource: DispatchSourceRead?
     private var connectionSources: [Int32: DispatchSourceRead] = [:]
+    // niri subscribers ("EventStream") and legacy subscribers (bare
+    // "event-stream") are tracked apart on purpose: niri's stream carries
+    // EXCLUSIVELY Event enum JSON (src/ipc/server.rs), so the legacy
+    // {"event":...} lines must never reach a strict client - its Event
+    // deserializer dies on the first unknown variant. Legacy subscribers
+    // keep receiving both kinds, exactly what they got before the split.
     private var streamFDs: Set<Int32> = []
+    private var legacyStreamFDs: Set<Int32> = []
     var onRequest: ((String) -> String)?
     // The current-state event lines to replay to a just-subscribed client, so
     // the event stream is self-sufficient: a subscriber sees the world as it is
@@ -98,31 +105,43 @@ final class MsgServer {
                 let n = read(connection, &chunk, 4096)
                 guard n > 0 else { self.drop(connection); return }
                 buffer.append(contentsOf: chunk[0..<n])
-                guard let newline = buffer.firstIndex(of: 0x0A) else { return }
-                let request = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
-                    .trimmingCharacters(in: .whitespaces)
-                // Both the legacy text form (`event-stream`) and niri's real IPC
-                // form (the JSON string `"EventStream"`) open a persistent event
-                // stream; anything else is a one-shot request.
-                if request == "event-stream" || request == "\"EventStream\"" {
-                    self.streamFDs.insert(connection)
-                    // niri answers an EventStream request with {"Ok":"Handled"}
-                    // before the events begin (src/ipc/server.rs) - a strict
-                    // niri client chokes on anything else as its first line.
-                    // The legacy text form keeps its old ack so existing
-                    // subscribers' expectations hold.
-                    self.send(
-                        connection,
-                        request == "event-stream"
-                            ? "{\"event\":\"subscribed\"}" : "{\"Ok\":\"Handled\"}")
-                    // Replay the current state to this one subscriber before it
-                    // starts receiving live changes.
-                    for line in self.onSubscribe?() ?? [] { self.send(connection, line) }
-                    // the read source stays alive: its EOF is how we learn the
-                    // subscriber went away
-                } else {
-                    self.sendFully(connection, self.onRequest?(request) ?? "{\"error\":\"no handler\"}")
-                    self.drop(connection)
+                // niri serves requests IN A LOOP on one connection ("you can
+                // keep writing Requests, each on a single line, and read
+                // Replys", lib.rs:30-31; server.rs:191-268). It used to
+                // answer the first and hang up, so a multiplexing client
+                // broke on its second request. EOF is still the hang-up.
+                while let newline = buffer.firstIndex(of: 0x0A) {
+                    let request = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
+                        .trimmingCharacters(in: .whitespaces)
+                    buffer.removeSubrange(buffer.startIndex...newline)
+                    if request.isEmpty { continue }
+                    // Both the legacy text form (`event-stream`) and niri's
+                    // real IPC form (the JSON string `"EventStream"`) turn
+                    // the connection into a persistent event stream; further
+                    // requests keep being answered interleaved, like
+                    // upstream's reply-then-events contract.
+                    if request == "event-stream" || request == "\"EventStream\"" {
+                        if request == "event-stream" {
+                            self.legacyStreamFDs.insert(connection)
+                        } else {
+                            self.streamFDs.insert(connection)
+                        }
+                        // niri answers an EventStream request with
+                        // {"Ok":"Handled"} before the events begin
+                        // (src/ipc/server.rs) - a strict niri client chokes
+                        // on anything else as its first line. The legacy
+                        // text form keeps its old ack.
+                        self.send(
+                            connection,
+                            request == "event-stream"
+                                ? "{\"event\":\"subscribed\"}" : "{\"Ok\":\"Handled\"}")
+                        // Replay the current state to this one subscriber
+                        // before it starts receiving live changes.
+                        for line in self.onSubscribe?() ?? [] { self.send(connection, line) }
+                    } else {
+                        self.sendFully(
+                            connection, self.onRequest?(request) ?? "{\"error\":\"no handler\"}")
+                    }
                 }
             }
         }
@@ -133,6 +152,7 @@ final class MsgServer {
 
     private func drop(_ connection: Int32) {
         streamFDs.remove(connection)
+        legacyStreamFDs.remove(connection)
         connectionSources.removeValue(forKey: connection)?.cancel()
     }
 
@@ -180,11 +200,21 @@ final class MsgServer {
         }
     }
 
+    // A niri Event line: goes to every subscriber, niri and legacy alike.
     func broadcast(_ line: String) {
         // A subscriber that can't keep up gets dropped rather than being
         // allowed to stall the engine: it never closed the socket, so its
         // read source's EOF path would never fire on its own.
-        for fd in streamFDs where !send(fd, line) {
+        for fd in streamFDs.union(legacyStreamFDs) where !send(fd, line) {
+            print("[msg] event-stream subscriber \(fd) isn't draining - dropping it")
+            drop(fd)
+        }
+    }
+
+    // A legacy {"event":...} line: legacy subscribers only. niri's stream
+    // carries nothing but Event enum JSON, so these must not cross over.
+    func broadcastLegacy(_ line: String) {
+        for fd in legacyStreamFDs where !send(fd, line) {
             print("[msg] event-stream subscriber \(fd) isn't draining - dropping it")
             drop(fd)
         }

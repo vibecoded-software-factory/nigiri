@@ -20,8 +20,7 @@ extension TilingEngine {
         // landed on the wrong side) and `.inColumn` was unreachable over a
         // tabbed column - it could not be dropped in as a tab at all.
         let targets = ColumnLayoutEngine.targetFrames(
-            columns: workspace.columns, in: screenFrame,
-            maximizedIndex: workspace.maximizedIndex, viewOffset: workspace.viewOffset,
+            columns: workspace.columns, in: screenFrame, viewOffset: workspace.viewOffset,
             includingParked: false)
         var byWindow: [ObjectIdentifier: CGRect] = [:]
         for (window, frame) in targets { byWindow[ObjectIdentifier(window)] = frame }
@@ -32,7 +31,7 @@ extension TilingEngine {
 
     // Where the drag would drop right now, and the slab to paint for it.
     func insertPreview(at point: CGPoint) -> (position: ColumnLayoutEngine.InsertPosition, hint: CGRect)? {
-        let (screenFrame, usableWidth) = usableScreen()
+        let (screenFrame, _) = usableScreen()
         let frames = currentColumnFrames()
         guard !frames.isEmpty else { return nil }
         let position = ColumnLayoutEngine.insertPosition(
@@ -41,11 +40,10 @@ extension TilingEngine {
         let gap = ColumnLayoutEngine.gap
         switch position {
         case .newColumn(let index):
-            // A column-shaped slab, the width the new column would get,
-            // centred on the gap it would open.
-            let width = ColumnLayoutEngine.width(
-                forProportion: ColumnLayoutEngine.defaultColumnWidth,
-                usableWidth: usableWidth)
+            // niri's insert hint slab is a FIXED 300px wide (scrolling.rs:
+            // 2436), not the would-be column width - the hint marks the
+            // slot, it does not preview the size.
+            let width: CGFloat = 300
             let x: CGFloat
             if index < frames.count, let first = frames[index].first {
                 x = first.minX - gap / 2 - width / 2
@@ -63,11 +61,9 @@ extension TilingEngine {
         case .inColumn(let columnIndex, let row):
             let columnFrames = frames[columnIndex]
             guard let reference = columnFrames.first else { return nil }
-            // A band the height one tile would take once the stack grows by
-            // one, at the slot it would occupy.
-            let count = columnFrames.count + 1
-            let total = (columnFrames.last?.maxY ?? reference.maxY) - reference.minY
-            let height = max(40, (total - CGFloat(count - 1) * gap) / CGFloat(count))
+            // niri's in-column band is a FIXED 150px tall (scrolling.rs:
+            // 2436-2516), not a computed tile share.
+            let height: CGFloat = 150
             let y: CGFloat
             if row < columnFrames.count {
                 y = columnFrames[row].minY - gap / 2 - height / 2
@@ -105,7 +101,7 @@ extension TilingEngine {
             column.setWindows([window])
             // The new column inherits the width the source had: a drag is a
             // move, not a resize.
-            column.widthProportion = source.widthProportion
+            column.width = source.width
             workspace.insertColumn(column, at: min(max(0, index), workspace.columns.count))
             workspace.focus(column: min(max(0, index), workspace.columns.count - 1))
         case .inColumn(let columnIndex, let row):
@@ -116,7 +112,7 @@ extension TilingEngine {
                 let clamped = min(max(0, row), source.windows.count)
                 if clamped == sourceRow || clamped == sourceRow + 1 { return false }
                 source.removeWindow(at: sourceRow)
-                source.insert(window, at: clamped > sourceRow ? clamped - 1 : clamped)
+                source.reinsert(window, at: clamped > sourceRow ? clamped - 1 : clamped)
                 source.cachedHeights = nil
                 source.focus(window: window)
                 workspace.focus(column: columnIndex)

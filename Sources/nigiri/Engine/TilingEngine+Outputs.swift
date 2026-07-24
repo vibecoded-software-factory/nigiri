@@ -88,7 +88,7 @@ extension TilingEngine {
         let frame = usableScreen(for: output).frame
         watcher.applyingLayout {
             _ = ColumnLayoutEngine.layout(
-                columns: ws.columns, in: frame, maximizedIndex: ws.maximizedIndex,
+                columns: ws.columns, in: frame,
                 viewOffset: ws.viewOffset, skipping: ws.fullscreenWindow)
         }
     }
@@ -148,6 +148,58 @@ extension TilingEngine {
         return best?.index
     }
 
+    // niri's focus-monitor-next/previous: cycle the outputs in order.
+    func focusMonitorRelative(_ delta: Int) {
+        guard outputs.count > 1 else { return }
+        focusOutput((focusedOutputIndex + delta + outputs.count) % outputs.count)
+    }
+
+    // niri's move-column-to-monitor-next/previous, reusing the directional
+    // move's machinery with a cycled target.
+    func moveColumnToMonitorRelative(_ delta: Int) {
+        guard outputs.count > 1 else { return }
+        moveColumnToMonitor(outputIndex: (focusedOutputIndex + delta + outputs.count) % outputs.count)
+    }
+
+    // niri's move-workspace-to-monitor: the ACTIVE workspace relocates to
+    // the target output (focus follows), and both outputs re-settle their
+    // dynamic-workspace invariants. NOTE: exercised only on a single output
+    // so far (guarded no-op there); the multi-monitor path follows the same
+    // stash/restore dance as move-column-to-monitor.
+    func moveWorkspaceToMonitor(outputIndex: Int) {
+        guard outputs.indices.contains(outputIndex), outputIndex != focusedOutputIndex else { return }
+        let source = outputs[focusedOutputIndex]
+        let target = outputs[outputIndex]
+        let ws = source.workspaces[source.activeWorkspaceIndex]
+        source.workspaces.remove(at: source.activeWorkspaceIndex)
+        if source.workspaces.isEmpty { source.workspaces = [Workspace()] }
+        source.activeWorkspaceIndex = min(source.activeWorkspaceIndex, source.workspaces.count - 1)
+        source.previousWorkspaceIndex = min(source.previousWorkspaceIndex, source.workspaces.count - 1)
+        // In front of the target's trailing empty workspace, like a moved
+        // column's arrival.
+        let insertAt = max(0, target.workspaces.count - 1)
+        target.workspaces.insert(ws, at: insertAt)
+        target.activeWorkspaceIndex = insertAt
+        focusOutput(outputIndex)
+        compactWorkspaces()
+        reflow()
+        emitWorkspacesChanged()
+        print("move-workspace-to-monitor -> \(target.name)")
+    }
+
+    func moveWorkspaceToMonitor(_ direction: MonitorDirection) {
+        guard let index = outputIndex(inDirection: direction) else {
+            print("move-workspace-to-monitor \(direction): no monitor there")
+            return
+        }
+        moveWorkspaceToMonitor(outputIndex: index)
+    }
+
+    func moveWorkspaceToMonitorRelative(_ delta: Int) {
+        guard outputs.count > 1 else { return }
+        moveWorkspaceToMonitor(outputIndex: (focusedOutputIndex + delta + outputs.count) % outputs.count)
+    }
+
     func focusMonitor(_ direction: MonitorDirection) {
         guard let index = outputIndex(inDirection: direction) else {
             print("focus-monitor \(direction): no monitor there")
@@ -163,19 +215,23 @@ extension TilingEngine {
             print("move-column-to-monitor \(direction): no monitor there")
             return
         }
+        moveColumnToMonitor(outputIndex: index)
+    }
+
+    func moveColumnToMonitor(outputIndex index: Int) {
+        guard outputs.indices.contains(index), index != focusedOutputIndex else { return }
         guard !workspace.isFloatingActive,
             workspace.columns.indices.contains(workspace.focusedIndex),
             let column = workspace.removeColumn(at: workspace.focusedIndex)
         else { return }
-        if let full = workspace.fullscreenWindow, column.windows.contains(where: { $0 === full }) {
-            workspace.fullscreenWindow = nil
-        }
+        // Fullscreen rides the column to the other monitor (per-column
+        // flag, audit LAY-4) - upstream keeps it too.
         workspace.focus(column: nearestVisiblyOccupiedColumnIndex(from: workspace.focusedIndex))
         let target = outputs[index]
         target.activeWorkspace.appendColumn(column)
         target.activeWorkspace.focus(column: target.activeWorkspace.columns.count - 1)
         target.activeWorkspace.isFloatingActive = false
-        print("move-column-to-monitor \(direction) -> \(target.name)")
+        print("move-column-to-monitor -> \(target.name)")
         reflow()  // the output the column left
         focusOutput(index)  // follow it, and lay the target out
     }

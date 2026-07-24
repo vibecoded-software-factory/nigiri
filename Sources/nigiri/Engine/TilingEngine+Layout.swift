@@ -586,22 +586,17 @@ extension TilingEngine {
                 let c = Column()
                 c.setWindows([window])
                 // Appended, not inserted: end-of-strip never shifts an
-                // existing index (maximizedIndex included), and this is a
-                // silent correction - it must not move anything under focus.
+                // existing index, and this is a silent correction - it must
+                // not move anything under focus.
                 ws.appendColumn(c)
                 print("reclassified as tileable: \(window.title)")
             }
         }
 
-        // A fullscreen window that closed would otherwise keep every other
-        // window parked off-screen forever, with no decorations.
-        for ws in allWorkspaces {
-            if let full = ws.fullscreenWindow,
-                !ws.allWindows.contains(where: { $0 === full })
-            {
-                ws.fullscreenWindow = nil
-            }
-        }
+        // A fullscreen window that closed cannot dangle any more: the state
+        // is derived from the column flags, and a dead window's emptied
+        // column takes its flag down with it (a surviving tabbed column
+        // fullscreens its next tab, like upstream's active tile).
 
         let knownElements = allWorkspaces.flatMap { ws in ws.allWindows.map { $0.axElement } }
         // Genuinely new windows always open on the active workspace, and -
@@ -637,6 +632,9 @@ extension TilingEngine {
             let rule = matchingWindowRule(appName: appName, bundleID: app?.bundleIdentifier, title: title)
             let window = ManagedWindow(axElement: element, pid: pid, title: title)
             window.isDialog = kind == .dialog
+            // The first flight plays niri's window-open channel (see
+            // animateFrames); cataloguing an existing session is not an open.
+            window.openAnimationPending = !isInitialAdoption
             // A non-settable size is the AX analogue of min == max: niri
             // clamps that tile's column to exactly this size (see
             // ManagedWindow.fixedSize). Probed at adoption because a rule
@@ -706,12 +704,12 @@ extension TilingEngine {
             }
             // niri's open-on-workspace: adopt straight into that workspace,
             // parked out of sight - it never steals focus from the active
-            // one. By number, or by named workspace (resolved to its slot).
+            // one. By workspace NAME, niri's only form (window_rule.rs:
+            // 25-26) - the integer-index reading was invented syntax.
             // Skipped during initial adoption (cataloguing an existing
             // session shouldn't teleport windows around).
             let ruledWorkspace =
-                rule?.openOnWorkspace
-                ?? rule?.openOnWorkspaceName.flatMap { workspaceIndex(named: $0).map { $0 + 1 } }
+                rule?.openOnWorkspaceName.flatMap { workspaceIndex(named: $0).map { $0 + 1 } }
             if let wsNumber = ruledWorkspace, wsNumber >= 1, wsNumber - 1 != activeWorkspaceIndex,
                 !isInitialAdoption
             {
@@ -721,11 +719,13 @@ extension TilingEngine {
                     target.floatingWindows.append(window)
                 } else {
                     let c = Column()
-                    if let proportion = rule?.defaultWidthProportion { c.widthProportion = proportion }
+                    c.width = ColumnLayoutEngine.resolveDefaultWidth(
+                        rule?.defaultWidth ?? ColumnLayoutEngine.defaultColumnWidthSpec,
+                        windowWidth: WindowMover.currentFrame(element)?.width)
                     applyWidthRule(c)
                     c.setWindows([window])
                     target.appendColumn(c)
-                    if rule?.openMaximized == true { target.maximizedIndex = target.columns.count - 1 }
+                    if rule?.openMaximized == true { c.isFullWidth = true }
                 }
                 if let frame = WindowMover.currentFrame(element) {
                     window.stashedFrame = frame
@@ -745,13 +745,30 @@ extension TilingEngine {
                     // that in the model so the ring lands on it immediately.
                     workspace.focus(floating: workspace.floatingWindows.count - 1)
                     workspace.isFloatingActive = true
+                    // niri centers a newly floating window with no stored
+                    // position and no rule (floating.rs:449,
+                    // center_preferring_top_left_in_area); macOS's own
+                    // placement is wherever the app asked, which niri never
+                    // honors. Rule positions are applied by applyOpenState.
+                    if rule?.defaultFloatingPosition == nil, window.positionSettable,
+                        let f = WindowMover.currentFrame(element)
+                    {
+                        let wa = usableScreen().frame
+                        let centered = CGPoint(
+                            x: wa.midX - f.width / 2, y: wa.midY - f.height / 2)
+                        try? WindowMover.setPosition(element, to: centered)
+                    }
                 }
                 applyOpenState()
             } else {
                 let c = Column()
-                if let proportion = rule?.defaultWidthProportion {
-                    c.widthProportion = proportion
-                }
+                // niri resolves default-column-width per window at open
+                // (layout.rs:146-147): rule wins over the global; fixed and
+                // the empty block ("the window decides") resolve against
+                // the window's own current width.
+                c.width = ColumnLayoutEngine.resolveDefaultWidth(
+                    rule?.defaultWidth ?? ColumnLayoutEngine.defaultColumnWidthSpec,
+                    windowWidth: WindowMover.currentFrame(element)?.width)
                 applyWidthRule(c)
                 c.setWindows([window])
                 if isInitialAdoption {
@@ -770,11 +787,9 @@ extension TilingEngine {
                     // focus reads through isFloatingActive first).
                     workspace.isFloatingActive = false
                     focusNewColumn = true
-                    // niri's open-maximized, on the just-inserted column
-                    // (insertColumn already shifted any previous index).
-                    if rule?.openMaximized == true {
-                        workspace.maximizedIndex = insertAt
-                    }
+                    // niri's open-maximized: the flag lives on the column
+                    // itself, no index bookkeeping.
+                    if rule?.openMaximized == true { c.isFullWidth = true }
                 }
                 applyOpenState()
             }
@@ -826,9 +841,6 @@ extension TilingEngine {
         } else {
             workspace.focus(column: nearestVisiblyOccupiedColumnIndex(from: workspace.focusedIndex))
         }
-        if let mi = workspace.maximizedIndex, !workspace.columns.indices.contains(mi) {
-            workspace.maximizedIndex = nil
-        }
         if focusNewColumn {
             // Our explicit focus intent wins over whatever macOS considers
             // focused right now (usually still the old window, mid-launch) -
@@ -855,8 +867,7 @@ extension TilingEngine {
         if !structurallyChanged, !isOverviewActive, frameAnimationTimer == nil {
             let (screenFrame, _) = usableScreen()
             let wanted = ColumnLayoutEngine.targetFrames(
-                columns: workspace.columns, in: screenFrame,
-                maximizedIndex: workspace.maximizedIndex, viewOffset: workspace.viewOffset)
+                columns: workspace.columns, in: screenFrame, viewOffset: workspace.viewOffset)
             // Against the REAL frames, not the memorized ones: a window
             // dragged by its title bar (no Mod) is exactly the case this
             // relayout exists to correct, and the memo would still claim it
@@ -902,7 +913,7 @@ extension TilingEngine {
                 "tiled \(workspace.columns.count) column(s): \(managed.map { $0.title }.joined(separator: ", "))"
             )
         }
-        msgServer.broadcast(
+        msgServer.broadcastLegacy(
             "{\"event\":\"layout\",\"workspace\":\(activeWorkspaceIndex + 1),\"columns\":\(workspace.columns.count)}"
         )
         broadcastWindowDiff()
@@ -1010,7 +1021,7 @@ extension TilingEngine {
         var discovered = false
         watcher.applyingLayout {
             discovered = ColumnLayoutEngine.layout(
-                columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex,
+                columns: workspace.columns, in: screenFrame,
                 viewOffset: workspace.viewOffset, skipping: fullscreenWindowRef)
         }
         return discovered
@@ -1034,7 +1045,7 @@ extension TilingEngine {
         var targetOffset = explicitViewOffset ?? workspace.viewOffset
         if explicitViewOffset == nil, workspace.columns.indices.contains(workspace.focusedIndex) {
             let placements = ColumnLayoutEngine.columnPlacements(
-                columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex
+                columns: workspace.columns, usableWidth: usableWidth
             )
             targetOffset = ColumnLayoutEngine.scrollOffset(
                 toShow: workspace.focusedIndex, placements: placements, currentOffset: workspace.viewOffset,
@@ -1043,7 +1054,7 @@ extension TilingEngine {
         lastReflowedColumnIndex = workspace.focusedIndex
         workspace.viewOffset = targetOffset
         var targets = ColumnLayoutEngine.targetFrames(
-            columns: workspace.columns, in: screenFrame, maximizedIndex: workspace.maximizedIndex,
+            columns: workspace.columns, in: screenFrame,
             viewOffset: targetOffset)
         // niri's windowed fullscreen: this ONE window covers the raw screen
         // frame (no gaps), and the strip underneath keeps its own layout -

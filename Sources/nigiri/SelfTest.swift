@@ -34,7 +34,7 @@ enum SelfTest {
 
     static func column(_ proportion: CGFloat, minWidth: CGFloat? = nil) -> Column {
         let c = Column()
-        c.widthProportion = proportion
+        c.width = .proportion(proportion)
         c.cachedMinWidth = minWidth
         return c
     }
@@ -53,10 +53,10 @@ enum SelfTest {
         // already on screen.
         let two = ColumnLayoutEngine.columnPlacements(
             columns: [column(0.5), column(0.5)],
-            usableWidth: usableWidth, maximizedIndex: nil)
+            usableWidth: usableWidth)
         let four = ColumnLayoutEngine.columnPlacements(
             columns: (0..<4).map { _ in column(0.5) },
-            usableWidth: usableWidth, maximizedIndex: nil)
+            usableWidth: usableWidth)
         expectEqual(two[0].width, 720, "two 1/2 columns are 720 wide")
         expectEqual(two[1].x, 730, "the second one starts after the gap")
         for i in 0..<2 {
@@ -66,22 +66,80 @@ enum SelfTest {
 
         let thirds = ColumnLayoutEngine.columnPlacements(
             columns: (0..<3).map { _ in column(1.0 / 3) },
-            usableWidth: usableWidth, maximizedIndex: nil)
+            usableWidth: usableWidth)
         expectEqual(
             thirds.reduce(0) { $0 + $1.width } + 2 * ColumnLayoutEngine.gap, usableWidth,
             "three 1/3 columns fill the usable area exactly")
 
         let floored = ColumnLayoutEngine.columnPlacements(
             columns: [column(0.5, minWidth: 800), column(0.5)],
-            usableWidth: usableWidth, maximizedIndex: nil)
+            usableWidth: usableWidth)
         expectEqual(floored[0].width, 800, "a discovered floor widens its own column")
         expectEqual(floored[1].x, 810, "and pushes the next one over")
         expectEqual(floored[1].width, 720, "without shrinking it")
 
+        let maxedCols = [column(0.5), column(0.5)]
+        maxedCols[1].isFullWidth = true
         let maxed = ColumnLayoutEngine.columnPlacements(
-            columns: [column(0.5), column(0.5)],
-            usableWidth: usableWidth, maximizedIndex: 1)
-        expectEqual(maxed[1].width, usableWidth, "the maximized column takes the whole usable width")
+            columns: maxedCols, usableWidth: usableWidth)
+        expectEqual(maxed[1].width, usableWidth, "a full-width column takes the whole usable width")
+        // is_full_width is per COLUMN (scrolling.rs:170): two columns can
+        // hold it at once - impossible under the old single-index model.
+        let bothFull = [column(0.5), column(0.5)]
+        bothFull.forEach { $0.isFullWidth = true }
+        let bothPlaced = ColumnLayoutEngine.columnPlacements(
+            columns: bothFull, usableWidth: usableWidth)
+        expectEqual(bothPlaced[0].width, usableWidth, "several columns can be full-width at once (first)")
+        expectEqual(bothPlaced[1].width, usableWidth, "several columns can be full-width at once (second)")
+
+        // --- ColumnWidth::Fixed (audit LAY-6) -----------------------------
+        // niri's resolve_column_width (scrolling.rs:4401-4411): fixed pixels
+        // ARE the width - they do not re-derive from gaps or the view, so a
+        // monitor or gap change leaves a fixed column alone while a
+        // proportional one follows.
+        let fixedWidthCol = column(0.5)
+        fixedWidthCol.width = .fixed(800)
+        let propCol = column(0.5)
+        let mixedKinds = ColumnLayoutEngine.columnPlacements(
+            columns: [fixedWidthCol, propCol], usableWidth: usableWidth)
+        expectEqual(mixedKinds[0].width, 800, "a fixed column takes exactly its pixels")
+        expectEqual(mixedKinds[1].width, 720, "next to a proportional one resolved by the formula")
+        let savedGapForFixed = ColumnLayoutEngine.gap
+        ColumnLayoutEngine.gap = 40
+        let mixedWideGap = ColumnLayoutEngine.columnPlacements(
+            columns: [fixedWidthCol, propCol], usableWidth: usableWidth)
+        expectEqual(mixedWideGap[0].width, 800, "a gap change does not move a fixed width")
+        expect(
+            abs(mixedWideGap[1].width - ((usableWidth + 40) * 0.5 - 40)) < 0.01,
+            "while the proportional neighbor re-resolves against the new gap")
+        ColumnLayoutEngine.gap = savedGapForFixed
+        expectEqual(
+            ColumnLayoutEngine.resolveColumnWidth(.fixed(800), usableWidth: 300), 800,
+            "fixed ignores the view width too - that is the whole point")
+        // default-column-width {} (natural): the window's own width, stored
+        // FIXED (resolve_scrolling_width, workspace.rs:890).
+        expect(
+            ColumnLayoutEngine.resolveDefaultWidth(.natural, windowWidth: 963) == .fixed(963),
+            "an empty default-column-width stores the window's width as fixed")
+
+        // --- rubber band (audit ANI-3) ------------------------------------
+        // niri's rubber_band.rs, values computed by hand for c=0.5, d=0.05:
+        // band(0.1) = (1 - 1/(0.1*0.5/0.05 + 1))*0.05 = 0.025;
+        // derivative(0) = c = 0.5; derivative(0.1) = 0.5*0.05^2/(0.1)^2.
+        let rb = RubberBand.workspaceGesture
+        expectEqual(rb.band(0), 0, "no overshoot, no band")
+        expect(abs(rb.band(0.1) - 0.025) < 1e-9, "band(0.1) = 0.025 exactly")
+        expect(rb.band(1000) < rb.limit, "the band never exceeds its limit")
+        expect(abs(rb.derivative(0) - 0.5) < 1e-9, "slope at the boundary is the stiffness")
+        expect(abs(rb.derivative(0.1) - 0.125) < 1e-9, "derivative(0.1) = 0.125 exactly")
+        expect(abs(rb.clamp(0, 1, 1.1) - 1.025) < 1e-9, "overshoot past max is banded, not cut")
+        expect(abs(rb.clamp(0, 1, -0.1) - (-0.025)) < 1e-9, "and symmetric past min")
+        expectEqual(rb.clamp(0, 1, 0.5), 0.5, "inside the range clamp is the identity")
+        expectEqual(rb.clampDerivative(0, 1, 0.5), 1, "inside the range the slope is 1")
+        expect(abs(rb.clampDerivative(0, 1, 1.1) - 0.125) < 1e-9, "outside it is the band's slope")
+        expect(
+            abs(RubberBand.interactiveMoveStart.band(1) - 1.0 / 3.0) < 1e-9,
+            "the interactive-move threshold band (c=1, d=0.5): band(1) = 1/3")
 
         // niri's update_tile_sizes_with_transaction clamp: a fixed-size tile
         // (AX: size not settable, min == max) resolves its column to EXACTLY
@@ -95,15 +153,17 @@ enum SelfTest {
         fixedCol.setWindows([fixedWin])
         let fixedPlacements = ColumnLayoutEngine.columnPlacements(
             columns: [fixedCol, column(0.5)],
-            usableWidth: usableWidth, maximizedIndex: nil)
+            usableWidth: usableWidth)
         expectEqual(fixedPlacements[0].width, 440, "a fixed-size window resolves its column to its own width")
         expectEqual(fixedPlacements[1].x, 450, "and the next column packs against the clamped width")
         expectEqual(
             ColumnLayoutEngine.naiveHeights(for: [fixedWin], usableHeight: 892)[0], 388,
             "an exact size constraint fixes the height like set-window-height")
+        fixedCol.isFullWidth = true
         let maxedFixed = ColumnLayoutEngine.columnPlacements(
-            columns: [fixedCol], usableWidth: usableWidth, maximizedIndex: 0)
+            columns: [fixedCol], usableWidth: usableWidth)
         expectEqual(maxedFixed[0].width, 440, "maximize cannot outgrow a fixed-size window either")
+        fixedCol.isFullWidth = false
 
         // niri sizes decorations from the tile's ACTUAL geometry; an
         // animation target the app already refused is aimed at the app's
@@ -161,7 +221,7 @@ enum SelfTest {
         for offset in [CGFloat(0), 730, 1460] {
             let frames = ColumnLayoutEngine.targetFrames(
                 columns: (0..<4).map { _ in column(0.5) },
-                in: screen, maximizedIndex: nil, viewOffset: offset)
+                in: screen, viewOffset: offset)
             let onScreen = frames.map(\.frame).filter {
                 min(screen.maxX, $0.maxX) - max(screen.minX, $0.minX) > 2
             }
@@ -181,7 +241,7 @@ enum SelfTest {
             0, "an already visible column does not scroll")
         let three = ColumnLayoutEngine.columnPlacements(
             columns: (0..<3).map { _ in column(0.5) },
-            usableWidth: usableWidth, maximizedIndex: nil)
+            usableWidth: usableWidth)
         expectEqual(
             ColumnLayoutEngine.scrollOffset(
                 toShow: 2, placements: three, currentOffset: 0, usableWidth: usableWidth),
@@ -221,23 +281,90 @@ enum SelfTest {
             ColumnLayoutEngine.naiveHeights(for: overflowing, usableHeight: 900)[1] >= 0,
             "a manual height taller than the column never leaves a negative one")
 
+        // --- entering a column is auto_1 (audit LAY-3) --------------------
+        // niri's add_tile (scrolling.rs:4297-4312): the arriving tile is
+        // auto_1 - its old fixed height/weight does not travel - and the
+        // existing members keep their weights (no re-equalization on
+        // membership changes).
+        let joiner = window()
+        joiner.manualHeightPx = 500
+        joiner.heightWeight = 3
+        let joinedStack = Column()
+        joinedStack.setWindows([window(), window()])
+        joinedStack.windows[0].heightWeight = 2
+        joinedStack.add(joiner)
+        expect(
+            joiner.manualHeightPx == nil && joiner.heightWeight == 1,
+            "a consumed window enters as auto_1 - its old height does not travel")
+        expectEqual(joinedStack.windows[0].heightWeight, 2, "and the existing members keep their weights")
+        let expelled = window()
+        expelled.manualHeightPx = 500
+        let freshColumn = Column()
+        freshColumn.setWindows([expelled])
+        expect(
+            expelled.manualHeightPx == nil,
+            "an expelled window fills its fresh column instead of keeping its old fixed height")
+        let reordered = window()
+        let stack2 = Column()
+        stack2.setWindows([reordered, window()])
+        reordered.manualHeightPx = 500
+        stack2.removeWindow(at: 0)
+        stack2.reinsert(reordered, at: 1)
+        expect(
+            reordered.manualHeightPx == 500,
+            "an in-column reorder keeps the height data - the window never left")
+
+        // --- preset heights re-resolve every pass (audit LAY-8) -----------
+        // niri stores WindowHeight::Preset(idx) and update_tile_sizes
+        // re-resolves it (scrolling.rs:4533-4547): a monitor or gap change
+        // re-applies the proportion. Materialized pixels kept the OLD size.
+        let savedGapForPresets = ColumnLayoutEngine.gap
+        let savedHeightPresets = ColumnLayoutEngine.presetWindowHeightSizes
+        ColumnLayoutEngine.gap = 16
+        ColumnLayoutEngine.presetWindowHeightSizes = [.proportion(1.0 / 3.0), .proportion(0.5)]
+        let presetWindow = window()
+        presetWindow.presetHeightIndex = 0
+        let plainWindow = window()
+        let tall = ColumnLayoutEngine.naiveHeights(for: [presetWindow, plainWindow], usableHeight: 890)
+        // columnHeight = 890 + 16 = 906; preset 1/3 -> (906+16)/3 - 16 = 291.33
+        expect(abs(tall[0] - ((906.0 + 16) / 3 - 16)) < 0.01, "a Preset height resolves via niri's formula")
+        expect(abs(tall[0] + tall[1] - 890) < 0.01, "and the Auto sibling absorbs the rest")
+        let short = ColumnLayoutEngine.naiveHeights(for: [presetWindow, plainWindow], usableHeight: 590)
+        expect(
+            abs(short[0] - ((606.0 + 16) / 3 - 16)) < 0.01,
+            "a different column height RE-resolves the preset - it is not frozen pixels")
+        presetWindow.setFixedHeight(400)
+        expect(
+            presetWindow.presetHeightIndex == nil && presetWindow.manualHeightPx == 400,
+            "an explicit resize replaces the preset with Fixed, like set_window_height")
+        ColumnLayoutEngine.gap = savedGapForPresets
+        ColumnLayoutEngine.presetWindowHeightSizes = savedHeightPresets
+
+        // --- convert-to-auto weighting (audit LAY-2) ----------------------
+        // niri's convert_heights_to_auto: weights preserve apparent heights,
+        // centered at the median (scrolling.rs:5070-5083).
+        expectEqual(
+            ColumnLayoutEngine.autoWeights(preserving: [300, 600, 300]), [1, 2, 1],
+            "weights preserve apparent heights with the median at 1")
+        expectEqual(
+            ColumnLayoutEngine.autoWeights(preserving: [200, 400]), [0.5, 1],
+            "an even count takes sorted[len/2] as the median, like upstream")
+
         // --- workspace invariants -----------------------------------------
+        // is_full_width lives ON the column (scrolling.rs:170), so it needs
+        // no re-anchoring: it survives removals, inserts and swaps by
+        // construction - the flag travels with the object.
         let ws = Workspace()
         for _ in 0..<4 { ws.appendColumn(Column()) }
-        ws.maximizedIndex = 2
+        let fullCol = ws.columns[2]
+        fullCol.isFullWidth = true
         ws.removeColumn(at: 0)
-        expectEqual(
-            ws.maximizedIndex ?? -1, 1, "the maximized flag follows its column when an earlier one goes")
-        ws.maximizedIndex = 2
-        ws.removeColumn(at: 2)
-        expect(ws.maximizedIndex == nil, "removing the maximized column turns maximization off")
-        let ws2 = Workspace()
-        for _ in 0..<4 { ws2.appendColumn(Column()) }
-        ws2.maximizedIndex = 2
-        ws2.insertColumn(Column(), at: 0)
-        expectEqual(ws2.maximizedIndex ?? -1, 3, "inserting before shifts the maximized index")
-        ws2.swapColumns(3, 0)
-        expectEqual(ws2.maximizedIndex ?? -1, 0, "and a swap follows it too")
+        expect(
+            ws.columns[1] === fullCol && fullCol.isFullWidth,
+            "the full-width flag follows its column when an earlier one goes")
+        ws.insertColumn(Column(), at: 0)
+        ws.swapColumns(0, 2)
+        expect(fullCol.isFullWidth, "and survives inserts and swaps - it is a property of the column")
 
         // --- SizeChange ----------------------------------------------------
         // REGRESSION: every form was treated as an adjustment, so
@@ -263,6 +390,26 @@ enum SelfTest {
             failures.append("-100 should be adjustFixed")
         }
         expect(SizeChange.parse("abc") == nil, "an argument that is not a size is rejected")
+        // REGRESSION (fidelity audit LAY-1): the floating path collapsed all
+        // four forms into a delta, so set-column-width "50%" GREW a floating
+        // window by half the screen instead of setting it to half - the same
+        // bug the header of SizeChange.swift records as fixed for tiled.
+        // Semantics per src/layout/floating.rs:744-830, working area 1000.
+        expectEqual(
+            SizeChange.setProportion(50).resolvedFloating(current: 800, available: 1000), 500,
+            "floating SetProportion SETS to that share of the working area")
+        expectEqual(
+            SizeChange.setFixed(640).resolvedFloating(current: 800, available: 1000), 640,
+            "floating SetFixed sets exact pixels")
+        expectEqual(
+            SizeChange.adjustFixed(-100).resolvedFloating(current: 800, available: 1000), 700,
+            "floating AdjustFixed is a PIXEL delta, not a percent of the screen")
+        expectEqual(
+            SizeChange.adjustProportion(10).resolvedFloating(current: 800, available: 1000), 900,
+            "floating AdjustProportion adds points of working-area proportion")
+        expectEqual(
+            SizeChange.adjustFixed(-2000).resolvedFloating(current: 800, available: 1000), 1,
+            "the result clamps at 1px, like upstream's clamp(1., MAX_PX)")
 
         // --- niri Action decoding ------------------------------------------
         // REGRESSION: a bar clicking a workspace sends
@@ -294,6 +441,38 @@ enum SelfTest {
         expectEqual(
             actionLine("{\"Action\":{\"FocusWindow\":{\"id\":7}}}"), "focus-window id=7",
             "FocusWindow carries its target as id=7")
+        // REGRESSION (fidelity audit IPC-3, verified empirically):
+        // JSONSerialization's __NSCFBoolean matched `as? Int` BEFORE the Bool
+        // branch, so focus:true flattened to a positional 1 and
+        // MoveWindowToWorkspace{reference:{Index:2}, focus:true} moved the
+        // window to workspace 1 - the wrong workspace, with an Ok reply.
+        expectEqual(
+            actionLine(
+                "{\"Action\":{\"MoveWindowToWorkspace\":{\"window_id\":null,\"reference\":{\"Index\":2},\"focus\":true}}}"
+            ),
+            "move-window-to-workspace focus=true index=2",
+            "a JSON bool stays a key=value flag, never a positional 1")
+        expectEqual(
+            actionLine("{\"Action\":{\"Quit\":{\"skip_confirmation\":true}}}"),
+            "quit skip-confirmation=true",
+            "snake_case payload fields flatten to the kebab spelling the handler reads")
+        // REGRESSION (IPC-3): Spawn{command:[...]} is a JSON array; no branch
+        // matched it, so `spawn` arrived bare and no-opped.
+        expectEqual(
+            actionLine("{\"Action\":{\"Spawn\":{\"command\":[\"open\",\"-a\",\"Safari\"]}}}"),
+            "spawn open -a Safari", "Spawn's argv array survives")
+        // REGRESSION (IPC-3): niri's SizeChange is a tagged enum on the wire;
+        // it flattened to set-proportion=50.0, which SizeChange.parse read as
+        // nil - a no-op with an Ok reply.
+        expectEqual(
+            actionLine("{\"Action\":{\"SetColumnWidth\":{\"change\":{\"SetProportion\":50.0}}}}"),
+            "set-column-width 50%", "SetProportion becomes niri's own \"50%\" spelling")
+        expectEqual(
+            actionLine("{\"Action\":{\"SetWindowHeight\":{\"change\":{\"AdjustProportion\":-10.0}}}}"),
+            "set-window-height -10%", "AdjustProportion keeps its sign")
+        expectEqual(
+            actionLine("{\"Action\":{\"SetColumnWidth\":{\"change\":{\"AdjustFixed\":100.0}}}}"),
+            "set-column-width +100", "a positive adjust gains the + SizeChange.parse needs")
 
         // --- key combos ----------------------------------------------------
         // REGRESSION: virtual keycodes are physical POSITIONS. On Workman the
@@ -308,9 +487,21 @@ enum SelfTest {
         expectEqual(
             Int(NigiriConfig.parseCombo("Mod+Left")?.0 ?? 0), 0x7B,
             "a key with no character falls back to the fixed table")
+        // CFG-24: niri's modifier spellings only (input.rs:439-453). The
+        // invented Hyper/Cmd/Opt words are gone; Super/Win is Command, Alt
+        // is Option, ISO_Level3_Shift (AltGr) maps to Option.
         expect(
-            NigiriConfig.parseCombo("Hyper+F19")?.1 == [.command, .option, .control, .shift],
-            "Hyper is all four")
+            NigiriConfig.parseCombo("Super+Alt+F19")?.1 == [.command, .option],
+            "Super+Alt maps to Command+Option")
+        expect(
+            NigiriConfig.parseCombo("ISO_Level3_Shift+F19")?.1 == [.option],
+            "ISO_Level3_Shift (AltGr) is Option on macOS")
+        expect(
+            NigiriConfig.parseCombo("Hyper+F19") == nil,
+            "Hyper was invented vocabulary and is rejected, like niri would")
+        expect(
+            NigiriConfig.parseCombo("Cmd+F19") == nil,
+            "Cmd was invented vocabulary; niri spells it Super/Win")
         expect(NigiriConfig.parseCombo("Garbage+A") == nil, "a nonexistent modifier is rejected")
 
         // niri's bind `repeat` (binds.rs): default true, opt-out per bind.
@@ -411,12 +602,54 @@ enum SelfTest {
         try? "gaps 42".write(
             toFile: (incDir as NSString).appendingPathComponent("child.kdl"),
             atomically: true, encoding: .utf8)
-        var incVisited: Set<String> = []
+        var incRead: Set<String> = []
         let incExpanded = NigiriConfig.expandIncludes(
-            "include \"child.kdl\" //dms overrides", baseDir: incDir, visited: &incVisited)
+            "include \"child.kdl\" //dms overrides", baseDir: incDir, read: &incRead)
         expect(
-            incExpanded.contains("gaps 42"),
+            incExpanded?.contains("gaps 42") ?? false,
             "an include with a trailing comment still resolves")
+        // CFG-12: niri's include semantics (lib.rs:297-443).
+        incRead = []
+        expect(
+            NigiriConfig.expandIncludes(
+                "include \"missing.kdl\" optional=true", baseDir: incDir, read: &incRead) == "",
+            "a missing OPTIONAL include is tolerated with a warning")
+        incRead = []
+        expect(
+            NigiriConfig.expandIncludes(
+                "include \"missing.kdl\"", baseDir: incDir, read: &incRead) == nil,
+            "a missing REQUIRED include refuses the whole config, like niri")
+        expect(
+            incRead.contains { $0.hasSuffix("missing.kdl") },
+            "the failed include is still collected for the watcher (upstream stores it too)")
+        // The same child from two parents is legal (IncludeStack is per
+        // branch); a global visited set used to silently drop the second.
+        try? "include \"child.kdl\"".write(
+            toFile: (incDir as NSString).appendingPathComponent("mid.kdl"),
+            atomically: true, encoding: .utf8)
+        incRead = []
+        let incTwice = NigiriConfig.expandIncludes(
+            "include \"child.kdl\"\ninclude \"mid.kdl\"", baseDir: incDir, read: &incRead)
+        expect(
+            (incTwice?.components(separatedBy: "gaps 42").count ?? 0) - 1 == 2,
+            "the same file included from two parents lands twice, like niri's parts")
+        // Self-recursion within a branch refuses the config.
+        try? "include \"loop.kdl\"".write(
+            toFile: (incDir as NSString).appendingPathComponent("loop.kdl"),
+            atomically: true, encoding: .utf8)
+        incRead = []
+        expect(
+            NigiriConfig.expandIncludes(
+                "include \"loop.kdl\"", baseDir: incDir, read: &incRead) == nil,
+            "a self-including file is recursion and refuses the config")
+        // Includes are TOP-LEVEL only (lib.rs:297): inside a section the
+        // line is ordinary content, not a directive.
+        incRead = []
+        let nested = NigiriConfig.expandIncludes(
+            "layout {\n    include \"child.kdl\"\n}", baseDir: incDir, read: &incRead)
+        expect(
+            nested?.contains("gaps 42") == false,
+            "an include inside a section is not expanded")
         try? FileManager.default.removeItem(atPath: incDir)
 
         // REGRESSION: the tokenizer eats the quotes, so the bind's action has
@@ -459,21 +692,6 @@ enum SelfTest {
 
         // ===================== Tier 2 =====================
 
-        // --- the FIFO's line framing (CommandPipe) ------------------------
-        // Chunks arrive split at arbitrary boundaries; a partial tail must
-        // stay buffered instead of being dispatched as an action.
-        var buffer = Data("focus-column-right\nfocus-col".utf8)
-        var lines = CommandPipe.takeLines(from: &buffer)
-        expect(lines == ["focus-column-right"], "only the complete line is dispatched")
-        buffer.append(contentsOf: Array("umn-left\n".utf8))
-        lines = CommandPipe.takeLines(from: &buffer)
-        expect(lines == ["focus-column-left"], "the partial tail is completed by the next chunk")
-        expect(buffer.isEmpty, "and the buffer ends up empty")
-
-        buffer = Data("  set-column-width 50%  \n\n\n".utf8)
-        lines = CommandPipe.takeLines(from: &buffer)
-        expect(lines == ["set-column-width 50%"], "spaces are trimmed and empty lines are dropped")
-
         // --- width currency, the acceptance test for the unification ------
         // A column with a discovered floor must render at exactly that
         // floor, whatever the column count: the old inverse used a
@@ -483,7 +701,7 @@ enum SelfTest {
             let cols = (0..<count).map { _ in column(0.5) }
             cols[0].cachedMinWidth = 800
             let p = ColumnLayoutEngine.columnPlacements(
-                columns: cols, usableWidth: usableWidth, maximizedIndex: nil)
+                columns: cols, usableWidth: usableWidth)
             expectEqual(p[0].width, 800, "the 800px floor holds with \(count) column(s)")
         }
         // ...and the proportion that renders 800px is the same regardless.
@@ -502,7 +720,7 @@ enum SelfTest {
         tabbed.isTabbed = true
         tabbed.focus(row: 1)
         let tabFrames = ColumnLayoutEngine.targetFrames(
-            columns: [tabbed], in: screen, maximizedIndex: nil, viewOffset: 0)
+            columns: [tabbed], in: screen, viewOffset: 0)
         expectEqual(tabFrames.count, 3, "a tabbed column still reports all of its windows")
         let visible = tabFrames.filter { $0.frame.minX < screen.maxX - 2 }
         expectEqual(visible.count, 1, "only one stays on screen")
@@ -521,9 +739,9 @@ enum SelfTest {
         let mixed = [column(0.5), column(1.0 / 3), column(0.5, minWidth: 900)]
         for c in mixed { c.setWindows([window()]) }
         let geometries = ColumnLayoutEngine.columnGeometry(
-            columns: mixed, in: screen, maximizedIndex: nil, viewOffset: 300)
+            columns: mixed, in: screen, viewOffset: 300)
         let mixedFrames = ColumnLayoutEngine.targetFrames(
-            columns: mixed, in: screen, maximizedIndex: nil, viewOffset: 300)
+            columns: mixed, in: screen, viewOffset: 300)
         expectEqual(geometries.count, mixedFrames.count, "one geometry per single-window column")
         for (g, f) in zip(geometries, mixedFrames) {
             expectEqual(f.frame.minX, g.x, "targetFrames uses columnGeometry's x")
@@ -638,6 +856,11 @@ enum SelfTest {
             Regex("Picture-in-Picture").matches("Firefox Picture-in-Picture"),
             "unanchored, finding it anywhere is enough")
         expect(!Regex("[").matches("anything at all"), "an invalid pattern matches nothing (and warns)")
+        // Case-SENSITIVE, like rust's regex::Regex (niri-config/src/utils.rs):
+        // the forced .caseInsensitive made "Firefox" match app-ids niri's own
+        // matcher would not. Opting out is spelled (?i) in both engines.
+        expect(!Regex("firefox").matches("Firefox"), "matchers are case-sensitive, like niri")
+        expect(Regex("(?i)firefox").matches("Firefox"), "(?i) opts into insensitivity, same as rust regex")
 
         var m = NigiriConfig.Matcher()
         expect(
@@ -670,7 +893,7 @@ enum SelfTest {
         // --- items 57-60: hot pieces that had NO check at all
         // 57: with no screen the geometry is garbage, and that has to be detectable.
         expect(
-            ColumnLayoutEngine.columnPlacements(columns: [column(0.5)], usableWidth: -20, maximizedIndex: nil)
+            ColumnLayoutEngine.columnPlacements(columns: [column(0.5)], usableWidth: -20)
                 .allSatisfy { $0.width >= 0 },
             "with a negative usable width no column comes out negative")
 
@@ -715,6 +938,20 @@ enum SelfTest {
             active: 1, previous: 0, emptyAboveFirst: false)
         expectEqual(named.keep, [0, 1], "a named workspace is not deleted even when empty")
         expect(named.appendTrailing, "and since the last one has windows, a new one is appended")
+        // 60c (audit ACT-12): niri's special case (monitor.rs:646-653) -
+        // with empty-workspace-above-first and EVERYTHING empty, the two
+        // empty workspaces collapse to one instead of showing a phantom pair.
+        let collapsed = TilingEngine.compactPlan(
+            [(empty: true, named: false), (empty: true, named: false)],
+            active: 1, previous: 0, emptyAboveFirst: true)
+        expectEqual(collapsed.keep, [0], "everything empty under empty-above-first keeps ONE workspace")
+        expectEqual(collapsed.active, 0, "and the active index lands on it")
+        expect(!collapsed.appendTrailing && !collapsed.insertLeading, "with nothing added around it")
+        // ...and a NAMED empty pair does not collapse (names are persistent).
+        let namedPair = TilingEngine.compactPlan(
+            [(empty: true, named: true), (empty: true, named: false)],
+            active: 0, previous: 0, emptyAboveFirst: true)
+        expectEqual(namedPair.keep.count, 2, "a named workspace blocks the collapse")
 
         // 60b: the absence counter is the final judge of whether a LIVE window
         // gets deleted from the model, and it has regressed twice already.
@@ -784,23 +1021,187 @@ enum SelfTest {
 
         // REGRESSION (item 42): with no stored index, the preset is picked by
         // comparing the current width - the first press on a new window gave
-        // preset 0 instead of the first one larger than it.
-        let presetList: [CGFloat] = [1.0 / 3.0, 0.5, 2.0 / 3.0]
+        // preset 0 instead of the first one larger than it. The comparison
+        // runs in RESOLVED PIXELS with upstream's 1px fractional-scaling
+        // allowance (scrolling.rs:4820-4838), not proportions.
+        let presetList: [CGFloat] = [1.0 / 3.0, 0.5, 2.0 / 3.0].map { $0 * 1200 }
         expectEqual(
-            ColumnLayoutEngine.presetIndex(after: 0.5, in: presetList, delta: 1, from: nil) ?? -1, 2,
-            "from 0.5 forwards you get 2/3, not 1/3")
+            ColumnLayoutEngine.presetIndex(after: 600, in: presetList, delta: 1, from: nil) ?? -1, 2,
+            "from 1/2 forwards you get 2/3, not 1/3")
         expectEqual(
-            ColumnLayoutEngine.presetIndex(after: 0.5, in: presetList, delta: -1, from: nil) ?? -1, 0,
+            ColumnLayoutEngine.presetIndex(after: 600, in: presetList, delta: -1, from: nil) ?? -1, 0,
             "and backwards, 1/3")
         expectEqual(
-            ColumnLayoutEngine.presetIndex(after: 0.9, in: presetList, delta: 1, from: nil) ?? -1, 0,
+            ColumnLayoutEngine.presetIndex(after: 1080, in: presetList, delta: 1, from: nil) ?? -1, 0,
             "wider than all of them: wraps to the first")
         expectEqual(
-            ColumnLayoutEngine.presetIndex(after: 0.1, in: presetList, delta: -1, from: nil) ?? -1, 2,
+            ColumnLayoutEngine.presetIndex(after: 120, in: presetList, delta: -1, from: nil) ?? -1, 2,
             "narrower than all of them going backwards: wraps to the last")
         expectEqual(
-            ColumnLayoutEngine.presetIndex(after: 0.5, in: presetList, delta: 1, from: 0) ?? -1, 1,
+            ColumnLayoutEngine.presetIndex(after: 600, in: presetList, delta: 1, from: 0) ?? -1, 1,
             "with a stored index the index wins, which is niri's fast path")
+        expectEqual(
+            ColumnLayoutEngine.presetIndex(after: 600.5, in: presetList, delta: 1, from: nil) ?? -1, 2,
+            "a sub-pixel overshoot does not count as wider - niri's 1px allowance")
+        // REGRESSION (audit LAY-7): the floating width and height preset
+        // cyclers seeded backward as firstWider-1 then +delta - between 1/3
+        // and 1/2, back gave 2/3 where niri gives 1/3. Both now delegate to
+        // presetIndex above; this pins the audit's exact case in px terms.
+        expectEqual(
+            ColumnLayoutEngine.presetIndex(
+                after: 400, in: [1.0 / 3.0, 0.5, 2.0 / 3.0].map { $0 * 1000 }, delta: -1, from: nil) ?? -1, 0,
+            "off-preset between 1/3 and 1/2, backward lands on 1/3 - niri's last-strictly-narrower")
+
+        // --- per-animation defaults (audit ANI-1) --------------------------
+        // niri-config/src/animations.rs:130-330: each animation carries its
+        // OWN default. A universal spring(800) was right for exactly four
+        // names and wrong for the rest - under a comment citing the line
+        // that defines workspace-switch as stiffness 1000.
+        if case .spring(let s)? = AnimationCurve.defaults["workspace-switch"] {
+            expect(abs(s.omega0 * s.omega0 - 1000) < 0.001, "workspace-switch defaults to spring 1000")
+        } else {
+            failures.append("workspace-switch default should be a spring")
+        }
+        if case .easing(let e)? = AnimationCurve.defaults["window-close"] {
+            expect(
+                e.durationMs == 150 && e.curve == .easeOutQuad,
+                "window-close defaults to 150ms ease-out-quad")
+        } else {
+            failures.append("window-close default should be an easing, not a spring")
+        }
+        if case .easing(let e)? = AnimationCurve.defaults["window-open"] {
+            expect(
+                e.durationMs == 150 && e.curve == .easeOutExpo,
+                "window-open defaults to 150ms ease-out-expo")
+        } else {
+            failures.append("window-open default should be an easing, not a spring")
+        }
+        if case .spring(let s)? = AnimationCurve.defaults["window-movement"] {
+            expect(abs(s.omega0 * s.omega0 - 800) < 0.001, "window-movement stays at spring 800")
+        } else {
+            failures.append("window-movement default should be a spring")
+        }
+
+        // --- animation parser merge semantics (audit CFG-11 / ANI-7) -------
+        // niri's Anim decode (animations.rs:726-830): a half-specified
+        // easing borrows the missing half from the animation's OWN default
+        // easing, or 250ms/EaseOutCubic when the default is a spring; a
+        // spring requires all three properties and validates ranges.
+        let animCfg = NigiriConfig.parse(
+            """
+            animations {
+                window-open { duration-ms 300; }
+                window-movement { curve "ease-out-quad"; }
+                window-close { curve "linear"; }
+                workspace-switch { spring stiffness=1200; }
+                overview-open-close { spring damping-ratio=99.0 stiffness=800 epsilon=0.0001; }
+                horizontal-view-movement { spring damping-ratio=1.0 stiffness=850 epsilon=0.0001; }
+                slowdown 0
+            }
+            """)
+        if case .easing(let e)? = animCfg.animations["window-open"] {
+            expect(
+                e.durationMs == 300 && e.curve == .easeOutExpo,
+                "duration-ms alone borrows the animation's default curve (ease-out-expo)")
+        } else {
+            failures.append("window-open with duration-ms alone should be an easing")
+        }
+        if case .easing(let e)? = animCfg.animations["window-movement"] {
+            expect(
+                e.durationMs == 250 && e.curve == .easeOutQuad,
+                "curve alone over a spring default gets niri's generic 250ms")
+        } else {
+            failures.append("window-movement with curve alone should be an easing, not dropped")
+        }
+        if case .easing(let e)? = animCfg.animations["window-close"] {
+            expect(
+                e.durationMs == 150 && e.curve == .linear,
+                "curve alone over an easing default borrows its 150ms duration")
+        } else {
+            failures.append("window-close with curve alone should be an easing, not dropped")
+        }
+        expect(
+            animCfg.animations["workspace-switch"] == nil,
+            "a spring missing required properties is dropped, not filled with invented defaults")
+        expect(
+            animCfg.animations["overview-open-close"] == nil,
+            "a spring with damping-ratio out of 0.1...10 is rejected")
+        if case .spring(let s)? = animCfg.animations["horizontal-view-movement"] {
+            expect(abs(s.omega0 * s.omega0 - 850) < 0.001, "a complete, in-range spring is accepted")
+        } else {
+            failures.append("a valid spring should parse")
+        }
+        expectEqual(animCfg.animationSlowdown, 0, "slowdown 0 is legal, like niri (instant)")
+
+        // --- cubic-bezier solves x, like CSS and niri (audit ANI-4) --------
+        expect(
+            abs(Easing.cubicBezierY(x1: 0.25, y1: 0.25, x2: 0.75, y2: 0.75, at: 0.3) - 0.3) < 1e-6,
+            "control points on the diagonal give the identity curve")
+        expect(
+            abs(Easing.cubicBezierY(x1: 0.42, y1: 0, x2: 0.58, y2: 1, at: 0.5) - 0.5) < 1e-6,
+            "a symmetric S-curve passes through (0.5, 0.5)")
+        let steep = Easing.cubicBezierY(x1: 0.1, y1: 0.9, x2: 0.2, y2: 1, at: 0.3)
+        expect(
+            steep > 0.85 && steep < 0.93,
+            "a steep ease-out is ~0.89 at x=0.3 - the old y(t) shortcut gave ~0.61")
+
+        // --- spring settle and velocity (audit ANI-9) ----------------------
+        // The overdamped solution decays much slower than its envelope
+        // (spring.rs:73-76): the envelope check ended those springs early.
+        let odSpring = Spring(stiffness: 800, dampingRatio: 3, epsilon: 0.0001)
+        let envelopeEstimate = -log(0.0001) / (3 * odSpring.omega0)
+        expect(
+            odSpring.settleSeconds > envelopeEstimate * 5,
+            "an overdamped spring settles far past its envelope estimate")
+        expect(
+            abs(odSpring.remainingFraction(at: odSpring.settleSeconds)) <= 0.0001 * 1.01,
+            "and Newton's settle time is where the REAL oscillation crosses epsilon")
+        expect(
+            odSpring.remainingFraction(at: envelopeEstimate) > 0.01,
+            "at the envelope time the overdamped spring is still visibly moving")
+        let critSpring = Spring(stiffness: 800, dampingRatio: 1, epsilon: 0.0001)
+        expect(
+            abs(critSpring.settleSeconds - (-log(0.0001) / critSpring.omega0)) < 0.001,
+            "critical/underdamped keep the envelope estimate, like upstream")
+        // initial_velocity: the spring can start MOVING (spring.rs:145);
+        // positive v0 pushes it away from the target first.
+        let kicked = Spring(stiffness: 800, dampingRatio: 1, epsilon: 0.0001, initialVelocity: 40)
+        expectEqual(kicked.remainingFraction(at: 0), 1, "any v0 still starts at the full displacement")
+        expect(
+            kicked.remainingFraction(at: 0.01) > critSpring.remainingFraction(at: 0.01),
+            "a positive v0 overshoots outward before settling")
+        // clamped_duration probes 1ms steps and gives up past 3000 like
+        // upstream (spring.rs:109-137).
+        if let clamped = critSpring.clampedSettleTime() {
+            // For critical/underdamped springs duration() is deliberately
+            // the ENVELOPE estimate (spring.rs:62-70, "general estimation"),
+            // which undershoots the true epsilon crossing - so the clamped
+            // duration lands at or past it, in 1ms steps.
+            expect(
+                clamped >= critSpring.settleSeconds && clamped < 1,
+                "the true epsilon crossing sits at/past the envelope estimate")
+        } else {
+            failures.append("a critical spring at 800 must clamp-settle within 3s")
+        }
+
+        // --- insertPosition hovers the column to the LEFT (audit LAY-15) ---
+        // niri's take_while(col_x <= x): a pointer in the horizontal gap
+        // still contests that column's tile gaps; strict containment used
+        // to answer newColumn for every gap point unconditionally.
+        let gapCols: [[CGRect]] = [
+            [CGRect(x: 0, y: 0, width: 400, height: 300), CGRect(x: 0, y: 310, width: 400, height: 300)],
+            [CGRect(x: 420, y: 0, width: 400, height: 610)],
+        ]
+        // In the gap between the columns (x=410), level with col 0's TILE
+        // boundary (y=305): the tile gap is closer than the column gap.
+        if case .inColumn(let c, let r) = ColumnLayoutEngine.insertPosition(
+            columnFrames: gapCols, point: CGPoint(x: 412, y: 305),
+            screenFrame: CGRect(x: 0, y: 0, width: 900, height: 700))
+        {
+            expect(c == 0 && r == 1, "the gap point lands in column 0's tile boundary")
+        } else {
+            failures.append("a gap point at a tile boundary should answer inColumn, like niri")
+        }
 
         // Popups from ACCESSORY apps (system permission prompts, the
         // "downloaded from the internet" warnings, password requests) have to
@@ -830,22 +1231,45 @@ enum SelfTest {
             !TilingEngine.isDialogLike(title: "", hasDefaultButton: false, hasCancelButton: false),
             "a borderless panel/bar (dialog subrole, no title, no buttons) is not adopted")
 
-        // REGRESSION (item 48): pulling a window out of the tiling cancels
-        // fullscreen. fullscreenWindow and floatingWindows were two flags nobody
-        // cross-checked: Mod+F and then Mod+V left a window that was both, and
-        // from then on every reflow took the fullscreen branch, failed to find
-        // it among the tiled windows, added it at raw screen size and parked
-        // every other one.
+        // REGRESSION (item 48) + audit LAY-4: fullscreen is a per-COLUMN
+        // flag (is_pending_fullscreen, scrolling.rs:171-175), and the
+        // workspace's fullscreenWindow is DERIVED from it - so pulling the
+        // window out of the tiling cancels fullscreen structurally (the
+        // Mod+F-then-Mod+V both-fullscreen-and-floating bug is now
+        // unrepresentable), and the flag travels with the column.
         let fsWs = Workspace()
         let fsColumn = column(0.5)
         let fsWindow = window()
         fsColumn.setWindows([fsWindow])
         fsWs.appendColumn(fsColumn)
-        fsWs.fullscreenWindow = fsWindow
+        fsColumn.isPendingFullscreen = true
+        expect(
+            fsWs.fullscreenWindow === fsWindow, "the flagged column's active tile IS the fullscreen window")
+        expect(!fsWs.fullscreenToEdges, "pending fullscreen reads as the raw-output mode")
+        fsColumn.isPendingMaximized = true
+        expect(!fsWs.fullscreenToEdges, "and fullscreen wins over maximized when both are pending")
+        fsColumn.isPendingFullscreen = false
+        expect(fsWs.fullscreenToEdges, "maximized alone is the to-edges mode")
+        fsColumn.isPendingFullscreen = true
+        fsColumn.isPendingMaximized = false
         expect(fsWs.detachFromTiling(fsWindow), "the window was in a column, so it is pulled out")
-        expect(fsWs.fullscreenWindow == nil, "and fullscreen is canceled along with it")
+        expect(fsWs.fullscreenWindow == nil, "and fullscreen is canceled along with it - by derivation")
         expectEqual(fsWs.columns.count, 0, "the empty column collapses")
         expect(!fsWs.detachFromTiling(window()), "one that is not tiled is not pulled out of anywhere")
+        // The flag travels: a fullscreen column moved between workspaces
+        // arrives still fullscreen - impossible under the per-workspace
+        // window reference, which every mover had to cancel by hand.
+        let fsA = Workspace()
+        let fsB = Workspace()
+        let travelCol = column(0.5)
+        let travelWin = window()
+        travelCol.setWindows([travelWin])
+        fsA.appendColumn(travelCol)
+        travelCol.isPendingFullscreen = true
+        _ = fsA.removeColumn(at: 0)
+        fsB.appendColumn(travelCol)
+        expect(fsA.fullscreenWindow == nil, "the source workspace forgot it with the column")
+        expect(fsB.fullscreenWindow === travelWin, "and the destination sees it fullscreen on arrival")
 
         // REGRESSION (item 39): resize-edge bumps the epoch too, so the floors
         // have to be captured before that. With an 800px floor, the trade with
@@ -884,24 +1308,26 @@ enum SelfTest {
             NigiriConfig.bindingKey(mods: ["shift", "ctrl", "mod"], suffix: "down"), "mod-ctrl-shift-down",
             "fixed order: mod, cmd, opt, ctrl, shift")
         expectEqual(
-            NigiriConfig.wheelBindingKey(for: "WheelScrollUp") ?? "", "mod-up",
-            "a wheel with no modifier reads as Mod (a bare wheel is just scrolling)")
+            NigiriConfig.wheelBindingKey(for: "WheelScrollUp") ?? "", "up",
+            "a bare wheel bind stays bare - niri allows unmodified wheel binds")
 
-        // The wheel{} section is written with the internal key by hand, which is
-        // exactly where a different order sneaks in: it gets canonicalized too.
+        // niri writes wheel binds as ORDINARY binds (Mod+WheelScrollDown,
+        // default-config.kdl:484-499); the invented wheel{} section is gone
+        // (audit CFG-6) and these prove the real form still lands in the
+        // same canonicalized table.
         let wheelCfg = NigiriConfig.parse(
             """
-            wheel {
-                shift-mod-down focus-column-right
-                ctrl-up move-column-to-workspace-up
+            binds {
+                Mod+Shift+WheelScrollDown { focus-column-right; }
+                Mod+Ctrl+WheelScrollUp { move-column-to-workspace-up; }
             }
             """)
         expectEqual(
             wheelCfg.wheelBindings["mod-shift-down"] ?? "", "focus-column-right",
-            "the hand-written order does not change the key")
+            "a niri wheel bind canonicalizes into the wheel table")
         expectEqual(
             wheelCfg.wheelBindings["mod-ctrl-up"] ?? "", "move-column-to-workspace-up",
-            "and with no mod, mod is assumed, as on the other path")
+            "modifier order never changes the key")
 
         // REGRESSION (item 23): focus-ring { off } had been parsed ever since the
         // section existed and was never applied - the ring kept being drawn at
@@ -1102,7 +1528,7 @@ enum SelfTest {
         ColumnLayoutEngine.newEpoch()
         expect(epochColumn.validMinWidth == nil, "and stops holding in the next one")
         let placedAfterEpoch = ColumnLayoutEngine.columnPlacements(
-            columns: [epochColumn], usableWidth: usableWidth, maximizedIndex: nil)
+            columns: [epochColumn], usableWidth: usableWidth)
         expectEqual(placedAfterEpoch[0].width, 720, "so the column goes back to its proportion")
 
         let epochWindow = window()
@@ -1135,9 +1561,16 @@ enum SelfTest {
             ColumnLayoutEngine.clampProportion(0.5, minWidth: 800, maxWidth: 400, usableWidth: usableWidth),
             floorProportion,
             "if ceiling and floor cross, the floor wins: an unreadable window is worse than a wide one")
+        // niri's clamp is (0, 10000) (scrolling.rs, set_column_width): a
+        // proportion past 1.0 is legal - the column grows wider than the
+        // view and the view left-aligns it. The old cap at 1.0 encoded the
+        // invented restriction this replaced (backlog item 19).
         expectEqual(
             ColumnLayoutEngine.clampProportion(2.0, minWidth: nil, maxWidth: nil, usableWidth: usableWidth),
-            1.0, "nothing goes past the usable width")
+            2.0, "a proportion wider than the view passes through, like niri")
+        expectEqual(
+            ColumnLayoutEngine.clampProportion(-0.5, minWidth: nil, maxWidth: nil, usableWidth: usableWidth),
+            0.0, "the floor is zero, not an invented 5%")
 
         // REGRESSION (item 9): move-window-to-workspace put a floating window
         // inside a column of the destination workspace, breaking the invariant
@@ -1215,12 +1648,295 @@ enum SelfTest {
         expectEqual(
             heightThirds.reduce(0, +) + 2 * ColumnLayoutEngine.gap, colH,
             "three windows at the 1/3 preset fit exactly, gaps included")
-        expect(cfg.shadowOn, "shadow{} turns it on")
+        // niri: "layout { shadow {} } still results in shadow = off, as it
+        // should" (niri-config/src/lib.rs:252-258) - only an explicit `on`
+        // enables. The previous check here asserted the INVERTED semantic.
+        expect(!cfg.shadowOn, "shadow{} without `on` stays off, like niri")
+        expect(
+            NigiriConfig.parse("layout { shadow { on; } }").shadowOn,
+            "shadow { on } enables")
         expectEqual(cfg.shadowSoftness, 40, "shadow softness")
         expectEqual(cfg.shadowOffset.height, 6, "shadow offset y")
+        // niri's border special case (lib.rs:246-280): an empty border{}
+        // block DOES enable (unlike shadow), `off` disables, and the active
+        // color keys are valid config - they used to be rejected with a
+        // lecture. Defaults per Border::default(): width 4, inactive
+        // rgb(80,80,80) - not the invented Catppuccin #585B70.
+        let borderCfg = NigiriConfig.parse("layout { border { } }")
+        expect(borderCfg.borderOn, "border{} enables, niri's documented special case")
+        expectEqual(borderCfg.borderWidth, 4, "border default width 4")
+        expect(
+            !NigiriConfig.parse("layout { border { off; } }").borderOn,
+            "border { off } stays off")
+        expect(
+            NigiriConfig.parse("layout { border { active-color \"#ff0000\"; } }")
+                .borderActiveColor.redComponent > 0.99,
+            "border active-color is accepted, not lectured away")
         expectEqual(cfg.overviewZoom, 0.35, "overview zoom")
+        // CFG-13: niri accepts the full 0..1 (FloatOrInt<0,1>); the old
+        // [0.1, 0.95] clamp silently rewrote legal values.
+        expectEqual(
+            NigiriConfig.parse("overview { zoom 0.05; }").overviewZoom, 0.05,
+            "zoom 0.05 is legal, not clamped up to 0.1")
+        expectEqual(
+            NigiriConfig.parse("overview { zoom 1.5; }").overviewZoom, 0.5,
+            "zoom outside 0..1 is rejected and the default stays")
+        // CFG-16: shadow defaults are niri's Shadow::default() - color
+        // rgba(0,0,0,0x77), spread 5 - and spread parses instead of
+        // vanishing.
+        expect(
+            abs(NigiriConfig().shadowColor.alphaComponent - 0x77 / 255.0) < 0.001,
+            "default shadow alpha is 0x77/255, not the invented 0.45")
+        expectEqual(
+            NigiriConfig.parse("layout { shadow { on; spread 12; } }").shadowSpread, 12,
+            "shadow spread is parsed, not discarded")
+        // CFG-9: default-column-width's three shapes (layout.rs:146-147).
+        if case .fixed(let px) = NigiriConfig.parse(
+            "layout { default-column-width { fixed 1200; } }"
+        ).defaultColumnWidth {
+            expectEqual(px, 1200, "default-column-width fixed keeps its pixels")
+        } else {
+            failures.append("default-column-width { fixed } should parse as .fixed")
+        }
+        expect(
+            NigiriConfig.parse("layout { default-column-width { } }").defaultColumnWidth
+                == .natural,
+            "the empty block means the window decides - niri's Some(None)")
+        let ruleWidth = NigiriConfig.parse(
+            """
+            window-rule {
+                match app-id="wezterm"
+                default-column-width { }
+            }
+            """
+        ).rules.first?.defaultWidth
+        expect(ruleWidth == .natural, "the per-rule empty block parses too (WezTerm's own default rule)")
+        // Resolution (LAY-6): fixed pixels STAY pixels (From<PresetSize>
+        // for ColumnWidth, scrolling.rs:3912-3919); natural is the window's
+        // own width, also fixed (resolve_scrolling_width, workspace.rs:890);
+        // only nothing-known falls back to the plain proportion.
+        expect(
+            ColumnLayoutEngine.resolveDefaultWidth(.fixed(712), windowWidth: nil) == .fixed(712),
+            "a fixed default stays fixed pixels - no proportion round-trip")
+        expect(
+            ColumnLayoutEngine.resolveDefaultWidth(.natural, windowWidth: 712) == .fixed(712),
+            "natural resolves the window's own width, stored fixed")
+        expect(
+            ColumnLayoutEngine.resolveDefaultWidth(.natural, windowWidth: nil) == .proportion(0.5),
+            "natural with no window falls back to the plain default")
+        // CFG-8: open-on-workspace is a NAME (window_rule.rs:25-26) - a
+        // numeric-looking argument is a workspace named "2", never index 2.
+        expectEqual(
+            NigiriConfig.parse(
+                """
+                window-rule {
+                    match app-id="x"
+                    open-on-workspace 2
+                }
+                """
+            ).rules.first?.openOnWorkspaceName ?? "", "2",
+            "open-on-workspace takes a name; the integer-index reading was invented")
         expectEqual(cfg.environment["TERM"] ?? "", "xterm", "environment")
         expect(cfg.screenshotPath.hasSuffix("shot-%Y.png"), "screenshot-path")
+        // CFG-19: `K null` UNSETS the variable (misc.rs:158-164); an empty
+        // string genuinely sets it empty - "empty = unset" was invented.
+        let envCfg = NigiriConfig.parse("environment { GONE null; EMPTY \"\"; }")
+        expect(
+            envCfg.environment["GONE"] == String??.some(nil),
+            "environment K null stores the unset marker")
+        expect(
+            envCfg.environment["EMPTY"] == String??.some(""),
+            "an empty string sets an empty variable, it does not unset")
+        // CFG-15: screenshot-path null disables saving (misc.rs:57); the
+        // default is niri's ~/Pictures/Screenshots path (misc.rs:60-64).
+        expectEqual(
+            NigiriConfig.parse("screenshot-path null").screenshotPath, "",
+            "screenshot-path null means clipboard only, not a file named null")
+        expect(
+            NigiriConfig().screenshotPath.contains("Pictures/Screenshots/Screenshot from"),
+            "the default screenshot path is niri's, not the invented Desktop one")
+        // CFG-18: niri's Flag type takes an explicit false (utils.rs:17-24).
+        let flagCfg = NigiriConfig.parse(
+            """
+            layout {
+                always-center-single-column false
+                empty-workspace-above-first false
+            }
+            input { focus-follows-mouse false; warp-mouse-to-focus false; }
+            """)
+        expect(
+            !flagCfg.alwaysCenterSingleColumn && !flagCfg.emptyWorkspaceAboveFirst
+                && !flagCfg.focusFollowsMouse && !flagCfg.warpMouseToFocus,
+            "an explicit false turns a Flag off instead of being ignored")
+        expect(
+            NigiriConfig.parse("input { workspace-auto-back-and-forth; }").workspaceAutoBackAndForth,
+            "workspace-auto-back-and-forth parses (input.rs:23,51) - it fell to unknown before")
+        // CFG-25: the pin's real spelling is input.keyboard.xkb.layout
+        // (input.rs:131-144); binds-layout was an invented name.
+        expectEqual(
+            NigiriConfig.parse("input { keyboard { xkb { layout \"us,ru\"; } } }").bindsLayout ?? "",
+            "us", "input.keyboard.xkb.layout parses, first of the comma list")
+        // CFG-17: niri's colors go through csscolorparser - names, rgb(),
+        // hsl(), and the four-numbers RGBA node form; only hex worked.
+        let cssCfg = NigiriConfig.parse(
+            """
+            layout {
+                focus-ring {
+                    active-color "red"
+                    inactive-color "rgb(80, 80, 80)"
+                    urgent-color 155 0 0 255
+                }
+                shadow { on; color "hsl(0, 0%, 50%)"; }
+            }
+            """)
+        expect(
+            cssCfg.ringFrom.redComponent > 0.99 && cssCfg.ringFrom.greenComponent < 0.01,
+            "a CSS named color parses (red)")
+        expect(
+            abs(cssCfg.ringInactiveColor.redComponent - 80.0 / 255) < 0.01,
+            "rgb() with spaces parses through the token rejoin")
+        expect(
+            abs(cssCfg.ringUrgentColor.redComponent - 155.0 / 255) < 0.01
+                && cssCfg.ringUrgentColor.greenComponent < 0.01,
+            "the four-numbers RGBA node form parses (appearance.rs:798-815)")
+        expect(
+            abs(cssCfg.shadowColor.redComponent - 0.5) < 0.01
+                && abs(cssCfg.shadowColor.greenComponent - 0.5) < 0.01,
+            "hsl() parses to the CSS conversion")
+        // CFG-27: the default config is niri's own keymap now - it must
+        // parse cleanly and carry the signature niri binds.
+        let defaults = NigiriConfig.parse(NigiriConfig.defaultConfigText)
+        expect(defaults.binds.count > 80, "the ported niri keymap parses (\(defaults.binds.count) binds)")
+        expect(
+            defaults.binds.contains { $0.combo == "Mod+BracketLeft" },
+            "niri's consume-or-expel brackets are present")
+        expect(
+            defaults.binds.contains { $0.combo == "Mod+Shift+Slash" },
+            "show-hotkey-overlay sits on Mod+Shift+Slash, like niri")
+        // CFG-20: niri's full tab-indicator vocabulary (appearance.rs:
+        // 459-499) - every real key used to be rejected as unknown.
+        let tabCfg = NigiriConfig.parse(
+            """
+            layout {
+                tab-indicator {
+                    hide-when-single-tab
+                    place-within-column
+                    gap 8
+                    width 6
+                    length total-proportion=0.8
+                    position "right"
+                    gaps-between-tabs 3
+                    corner-radius 4
+                }
+            }
+            """)
+        expect(
+            tabCfg.tabHideWhenSingleTab && tabCfg.tabPlaceWithinColumn && tabCfg.tabGap == 8
+                && tabCfg.tabWidth == 6 && tabCfg.tabLengthProportion == 0.8
+                && tabCfg.tabPosition == .right && tabCfg.tabGapsBetweenTabs == 3
+                && tabCfg.tabCornerRadius == 4,
+            "the full tab-indicator vocabulary parses")
+        expect(
+            NigiriConfig().tabActiveColor == nil,
+            "unset tab colors stay nil so they can derive from the ring/border, like upstream")
+        // CFG-21: urgent colors and any gradient angle parse (they used to
+        // be rejected; angle only accepted 45).
+        let ringCfg = NigiriConfig.parse(
+            """
+            layout {
+                focus-ring {
+                    active-gradient from="#ff0000" to="#0000ff" angle=90
+                    urgent-color "#9b0000"
+                    inactive-gradient from="#333333" to="#111111"
+                }
+            }
+            """)
+        expectEqual(ringCfg.ringAngle, 90, "any gradient angle is accepted, default 180 like niri")
+        expect(ringCfg.ringUrgentColor.redComponent > 0.5, "urgent-color parses and is stored")
+        expect(ringCfg.ringInactiveColor.redComponent < 0.3, "inactive-gradient takes its from stop")
+        // ACT-16 config side: config-notification { disable-failed }.
+        expect(
+            NigiriConfig.parse("config-notification { disable-failed; }")
+                .configNotificationDisableFailed,
+            "config-notification disable-failed parses (misc.rs:87-102)")
+        // ACT-10: the hotkey overlay is niri's CURATED list
+        // (hotkey_overlay.rs:197-300), not the whole bind table.
+        let curatedEntries = HotkeyOverlay.curated(
+            binds: [
+                ("Mod+Q", "close-window", nil, false),
+                ("Mod+T", "spawn open -a Terminal", nil, false),
+                ("Mod+Shift+E", "quit skip-confirmation=true", nil, false),
+                ("Mod+X", "focus-column-left", "Custom Left", false),
+                ("Mod+H", "focus-window-previous", nil, true),
+                ("F5", "spawn volume-up", nil, false),
+            ], hideNotBound: false)
+        expect(
+            curatedEntries.contains(HotkeyOverlay.Entry(combo: "Mod+Shift+E", title: "Exit nigiri")),
+            "quit falls back to the skip-confirmation bind, upstream's preference order")
+        expect(
+            curatedEntries.contains(HotkeyOverlay.Entry(combo: "Mod+T", title: "Spawn open")),
+            "a Mod+spawn bind appears named after its command")
+        expect(
+            !curatedEntries.contains { $0.combo == "F5" },
+            "a spawn bind without Mod (volume keys) stays out")
+        expect(
+            !curatedEntries.contains { $0.title.contains("focus-window-previous") },
+            "actions outside the curated set are not listed")
+        expect(
+            curatedEntries.contains(HotkeyOverlay.Entry(combo: "Mod+X", title: "Custom Left")),
+            "hotkey-overlay-title renames the entry")
+        expect(
+            curatedEntries.contains(HotkeyOverlay.Entry(combo: "", title: "Maximize Column")),
+            "an unbound curated action shows with an empty key column")
+        let curatedBound = HotkeyOverlay.curated(
+            binds: [("Mod+Q", "close-window", nil, false)], hideNotBound: true)
+        expect(
+            curatedBound == [HotkeyOverlay.Entry(combo: "Mod+Q", title: "Close Focused Window")],
+            "hide-not-bound keeps only bound entries (misc.rs:78-85)")
+        // ACT-15: the wallpaper behind the overview needs niri's own opt-in.
+        expect(
+            !NigiriConfig().backdropShowsWallpaper,
+            "the default overview backdrop is the plain color, not the desktop")
+        expect(
+            NigiriConfig.parse(
+                "layer-rule { match namespace=\"wallpaper\"; place-within-backdrop true; }"
+            ).backdropShowsWallpaper,
+            "layer-rule place-within-backdrop true opts the wallpaper in, like niri")
+        // CFG-22: duplicate binds - a duplicate within one binds{} keeps the
+        // FIRST (niri rejects the config outright, binds.rs:776-812); a bind
+        // in a LATER section replaces the earlier one (lib.rs:219-231).
+        NigiriConfig.layoutKeyCodes = ["a": 0x00, "b": 0x0B]
+        let dupBinds = NigiriConfig.parse(
+            """
+            binds {
+                Mod+A { focus-column-left; }
+                Mod+A { focus-column-right; }
+            }
+            binds {
+                Mod+A { close-window; }
+            }
+            """)
+        expectEqual(dupBinds.binds.count, 1, "one combo, one bind - never two handlers per press")
+        expectEqual(
+            dupBinds.binds.first?.action ?? "", "close-window",
+            "a later section REPLACES; within a section the first wins")
+        // CFG-26: ranges and vocabulary - out-of-range gaps rejected, the
+        // invented `gap` alias gone, a center-focused-column typo no longer
+        // rewrites the policy, unknown animation names are not stored.
+        expectEqual(
+            NigiriConfig.parse("layout { gaps -5; }").gap, NigiriConfig().gap,
+            "negative gaps are rejected (FloatOrInt<0,65535>), keeping the default")
+        expectEqual(
+            NigiriConfig.parse("layout { gap 33; }").gap, NigiriConfig().gap,
+            "the `gap` alias was invented vocabulary and is no longer accepted")
+        expect(
+            NigiriConfig.parse("layout { center-focused-column \"alwys\"; }").centerFocusedColumn
+                == NigiriConfig().centerFocusedColumn,
+            "a center-focused-column typo reports instead of silently becoming `never`")
+        expect(
+            NigiriConfig.parse("animations { window-opeen { duration-ms 100; } }")
+                .animations["window-opeen"] == nil,
+            "an unknown animation name is reported and not stored")
 
         // --- KDL: the shapes the official suite covers (kdl-org/kdl,
         // tests/test_cases), written in the v1 dialect niri uses via knuffel.
@@ -1290,6 +2006,17 @@ enum SelfTest {
         expectEqual(
             NigiriConfig.tokenize("shader #\"v2 form\"#"), ["shader", "v2 form"],
             "the KDL v2 form is accepted too")
+        // Raw string in PROPERTY position - the exact shape niri's own
+        // default config uses for window-rule regexes. The tokenizer only
+        // recognized raw strings at the start of a token, so the pattern
+        // reached the matcher as mangled garbage and the rule never fired.
+        expectEqual(
+            NigiriConfig.tokenize("match app-id=r#\"^org\\.wezfurlong\\.wezterm$\"#"),
+            ["match", "app-id=^org\\.wezfurlong\\.wezterm$"],
+            "a raw string after a property's = keeps its backslashes")
+        expectEqual(
+            NigiriConfig.tokenize("word=rest"), ["word=rest"],
+            "an r after = that is not a raw string stays an identifier")
         let shaderCfg = NigiriConfig.parse(
             """
             animations {
@@ -1323,7 +2050,7 @@ enum SelfTest {
         // condition on-overflow measures.
         let centerCols = [column(0.5), column(0.5), column(0.5)]
         let centerPlacements = ColumnLayoutEngine.columnPlacements(
-            columns: centerCols, usableWidth: usableWidth, maximizedIndex: nil)
+            columns: centerCols, usableWidth: usableWidth)
         ColumnLayoutEngine.centerPolicy = .never
         expectEqual(
             ColumnLayoutEngine.scrollOffset(
@@ -1349,7 +2076,7 @@ enum SelfTest {
         ColumnLayoutEngine.alwaysCenterSingleColumn = true
         let single = [column(1.0 / 3.0)]
         let singlePlacements = ColumnLayoutEngine.columnPlacements(
-            columns: single, usableWidth: usableWidth, maximizedIndex: nil)
+            columns: single, usableWidth: usableWidth)
         expectEqual(
             ColumnLayoutEngine.scrollOffset(
                 toShow: 0, placements: singlePlacements, currentOffset: 0, usableWidth: usableWidth),
@@ -1385,7 +2112,6 @@ enum SelfTest {
                 Mod+MouseMiddle { close-window; }
                 F13 { open-overview; }
             }
-            gestures { four-finger-up open-overview }
             """)
         expectEqual(
             mouseCfg.mouseBindings["mod-middle"] ?? "", "close-window",
@@ -1394,7 +2120,6 @@ enum SelfTest {
             mouseCfg.binds.contains { $0.combo == "F13" && $0.modifiers.isEmpty },
             "the modifier-less bind is registered")
         expect(mouseCfg.modKey == [.control], "mod-key reaches the config")
-        expectEqual(mouseCfg.gestureFourUp, "open-overview", "four-finger swipe")
         NigiriConfig.modKey = [.command, .option]
 
         // --- IPC: niri's shape and the old one, on the same socket ---
@@ -1419,6 +2144,35 @@ enum SelfTest {
             expectEqual(line, "move-column-to-workspace 2", "the old action passes through unchanged")
         } else {
             expect(false, "action <line> parses")
+        }
+        // IPC-5: the request surface niri actually has - these fell to
+        // "unknown request" before.
+        if case .layers = NiriProtocol.parse("\"Layers\"").request {
+        } else {
+            failures.append("Layers should parse")
+        }
+        if case .keyboardLayouts = NiriProtocol.parse("\"KeyboardLayouts\"").request {
+        } else {
+            failures.append("KeyboardLayouts should parse")
+        }
+        if case .pickColor = NiriProtocol.parse("\"PickColor\"").request {
+        } else {
+            failures.append("PickColor should parse")
+        }
+        if case .returnError = NiriProtocol.parse("\"ReturnError\"").request {
+        } else {
+            failures.append("ReturnError should parse")
+        }
+        if case .casts = NiriProtocol.parse("\"Casts\"").request {
+        } else {
+            failures.append("Casts should parse")
+        }
+        if case .output(let name) = NiriProtocol.parse(
+            "{\"Output\":{\"output\":\"DP-1\",\"action\":\"Off\"}}"
+        ).request {
+            expectEqual(name, "DP-1", "Output carries its target name")
+        } else {
+            failures.append("Output should parse")
         }
         if case .unknown = NiriProtocol.parse("{\"Nope\":{}}").request {
         } else {
@@ -1472,7 +2226,7 @@ enum SelfTest {
         let overviewCols = [column(0.5), column(0.5), column(0.5)]
         for c in overviewCols { c.setWindows([window()]) }
         let overviewOut = ColumnLayoutEngine.overviewFrames(
-            columns: overviewCols, in: screen, maximizedIndex: nil)
+            columns: overviewCols, in: screen)
         expectEqual(overviewOut.count, 3, "all three columns make it into the overview")
         expectEqual(
             overviewOut[2].frame.minX, screen.minX + 10 + 2 * (720 + 10),
@@ -1483,7 +2237,7 @@ enum SelfTest {
         // And with the clamp, which is what the old path did: the third one
         // sticks to the parking pixel.
         let clamped = ColumnLayoutEngine.targetFrames(
-            columns: overviewCols, in: screen, maximizedIndex: nil, viewOffset: 0)
+            columns: overviewCols, in: screen, viewOffset: 0)
         expectEqual(
             clamped[2].frame.minX, screen.maxX - 1,
             "targetFrames does clamp it: that is why the overview cannot use it")
@@ -1587,16 +2341,14 @@ enum SelfTest {
         let plainDrag = column(0.5)
         plainDrag.setWindows([window()])
         let previewFrames = ColumnLayoutEngine.targetFrames(
-            columns: [tabbedDrag, plainDrag], in: screen,
-            maximizedIndex: nil, viewOffset: 0,
+            columns: [tabbedDrag, plainDrag], in: screen, viewOffset: 0,
             includingParked: false)
         expectEqual(previewFrames.count, 2, "one entry per visible column, without the parked ones")
         expect(
             previewFrames.allSatisfy { $0.frame.minX < screen.maxX - 100 },
             "and none of them is the parking spot at the right edge")
         let withParked = ColumnLayoutEngine.targetFrames(
-            columns: [tabbedDrag, plainDrag], in: screen,
-            maximizedIndex: nil, viewOffset: 0)
+            columns: [tabbedDrag, plainDrag], in: screen, viewOffset: 0)
         expectEqual(
             withParked.count, 3, "the normal path does include them, which is what keeps them parked")
 
@@ -1605,7 +2357,7 @@ enum SelfTest {
         tabbedCol.setWindows([window(), window(), window()])
         tabbedCol.isTabbed = true
         expectEqual(
-            ColumnLayoutEngine.overviewFrames(columns: [tabbedCol], in: screen, maximizedIndex: nil).count, 1,
+            ColumnLayoutEngine.overviewFrames(columns: [tabbedCol], in: screen).count, 1,
             "the tabbed column is one card")
 
         // --- REGRESSION: colors with alpha were dropped silently ---
@@ -1652,7 +2404,7 @@ enum SelfTest {
         ColumnLayoutEngine.centerPolicy = .onOverflow
         let halves = (0..<3).map { _ in column(0.5) }
         let halfPlacements = ColumnLayoutEngine.columnPlacements(
-            columns: halves, usableWidth: usableWidth, maximizedIndex: nil)
+            columns: halves, usableWidth: usableWidth)
         // Three columns at 50%: every adjacent pair fits EXACTLY, so not even the
         // long jump from 0 to 2 centers - the neighbor of 2 coming from 0 is 1,
         // and 1+2 fit.
@@ -1665,7 +2417,7 @@ enum SelfTest {
         // At 66% no pair fits: that is when it centers.
         let wides = (0..<3).map { _ in column(0.66) }
         let widePlacements = ColumnLayoutEngine.columnPlacements(
-            columns: wides, usableWidth: usableWidth, maximizedIndex: nil)
+            columns: wides, usableWidth: usableWidth)
         expectEqual(
             ColumnLayoutEngine.scrollOffset(
                 toShow: 1, placements: widePlacements, currentOffset: 0, usableWidth: usableWidth,
@@ -1732,16 +2484,61 @@ enum SelfTest {
             TrackpadGestures.isMouseFamily(112),
             "family 112 is a Magic Mouse (as reported by this machine's hardware)")
         expect(!TrackpadGestures.isMouseFamily(110), "and 110 is the built-in trackpad")
-        let gcfg = NigiriConfig.parse(
-            """
-            gestures {
-                mouse-two-finger-left focus-column-right
-                mouse-one-finger-up open-overview
-            }
-            """)
-        expectEqual(gcfg.gestureMouseTwo[.left] ?? "", "focus-column-right", "two-finger mouse swipe")
-        expectEqual(gcfg.gestureMouseOne[.up] ?? "", "open-overview", "one-finger mouse swipe")
-        expect(gcfg.gestureMouseTwo[.right] == nil, "and what was not bound stays unbound")
+        // --- SwipeTracker (audit ANI-2) -----------------------------------
+        // niri's swipe_tracker.rs, values computed by hand. 10px per 10ms
+        // for 100ms: pos 100, velocity 100/0.09 (first-to-last timestamps).
+        var tracker = SwipeTracker()
+        for i in 0..<10 { tracker.push(10, timestamp: Double(i) * 0.010) }
+        expectEqual(tracker.pos, 100, "pos accumulates the deltas")
+        expect(abs(tracker.velocity() - 100.0 / 0.09) < 0.001, "velocity = sum/time over the history")
+        // projected = pos - vel/(1000*ln(0.997))
+        let expectedProjection = 100.0 - (100.0 / 0.09) / (1000.0 * log(0.997))
+        expect(
+            abs(tracker.projectedEndPos() - expectedProjection) < 0.001,
+            "projection decelerates at 0.997/ms, upstream's touchpad rate")
+        tracker.push(10, timestamp: 0.05)
+        expectEqual(tracker.pos, 100, "an out-of-order timestamp is dropped, like upstream")
+        // The 150ms history window: after a long idle push, old events fall
+        // out and the velocity is computed over the recent window only.
+        tracker.push(0, timestamp: 1.0)
+        expectEqual(tracker.velocity(), 0, "idle time empties the history - velocity dies")
+        expect(
+            abs(tracker.projectedEndPos() - 100) < 0.001,
+            "and the projection collapses to the current position")
+        // Workspace-switch decision math (monitor.rs end): 300px per
+        // workspace, clamped one either way, rounded.
+        var wsGesture = WorkspaceSwitchGestureState(centerIdx: 1)
+        wsGesture.tracker.push(200, timestamp: 0)
+        expectEqual(
+            wsGesture.endIdx(workspaceCount: 3), 2,
+            "200px with no velocity rounds to the next workspace (200/300 > 0.5)")
+        var wsShort = WorkspaceSwitchGestureState(centerIdx: 1)
+        wsShort.tracker.push(100, timestamp: 0)
+        expectEqual(
+            wsShort.endIdx(workspaceCount: 3), 1,
+            "100px stays put - under half a workspace of travel")
+        var wsFar = WorkspaceSwitchGestureState(centerIdx: 1)
+        wsFar.tracker.push(2000, timestamp: 0)
+        expectEqual(
+            wsFar.endIdx(workspaceCount: 5), 2,
+            "the clamp caps a touchpad swipe at one workspace either way (is_clamped)")
+        // View-offset snapping: nearest column alignment wins, clamped to
+        // the first/last column.
+        let snapCols = [column(0.5), column(0.5), column(0.5)]
+        let snapPlacements = ColumnLayoutEngine.columnPlacements(
+            columns: snapCols, usableWidth: usableWidth)
+        let s = ViewGestureSnapping.snap(
+            target: snapPlacements[1].x + 3, placements: snapPlacements, usableWidth: usableWidth)
+        expectEqual(s?.viewPos ?? -1, snapPlacements[1].x, "a near-left-edge target snaps to it")
+        expectEqual(s?.colIdx ?? -1, 1, "and activates that column")
+        let sFar = ViewGestureSnapping.snap(
+            target: 100000, placements: snapPlacements, usableWidth: usableWidth)
+        expectEqual(
+            sFar?.viewPos ?? -1, snapPlacements[2].x + snapPlacements[2].width - usableWidth,
+            "past the end clamps to the last column's right alignment")
+        // The invented gestures{} vocabulary is gone: those keys now fall
+        // through to unknown-key (report-and-skip), not into config state.
+        _ = NigiriConfig.parse("gestures { three-finger-left focus-column-right }")
 
         // Reserved screen-edge zones (the IPC reserve-zone command): the tiling
         // area shrinks by the strut, on the correct edge, in AX space (top-left
@@ -1838,22 +2635,39 @@ enum SelfTest {
         // change of the fields its Window carries - the old title-only diff
         // silently swallowed workspace moves and floating flips.
         let snapA = WindowBroadcastSnapshot(
-            title: "editor", workspaceId: 1, floating: false, column: 0, row: 0)
+            title: "editor", workspaceId: 1, floating: false, column: 0, row: 0, frame: nil)
         let snapB = WindowBroadcastSnapshot(
-            title: "browser", workspaceId: 1, floating: false, column: 1, row: 0)
+            title: "browser", workspaceId: 1, floating: false, column: 1, row: 0, frame: nil)
         var wdiff = WindowBroadcastDiff.changes(old: [:], new: [1: snapA, 2: snapB])
         expectEqual(wdiff.changed, [1, 2], "every new window is a change")
         expectEqual(wdiff.closed, [], "nothing closed on first sight")
         wdiff = WindowBroadcastDiff.changes(old: [1: snapA, 2: snapB], new: [1: snapA, 2: snapB])
         expect(wdiff.changed.isEmpty && wdiff.closed.isEmpty, "identical state emits nothing")
         let movedWorkspace = WindowBroadcastSnapshot(
-            title: "editor", workspaceId: 2, floating: false, column: 0, row: 0)
+            title: "editor", workspaceId: 2, floating: false, column: 0, row: 0, frame: nil)
         wdiff = WindowBroadcastDiff.changes(old: [1: snapA], new: [1: movedWorkspace])
         expectEqual(wdiff.changed, [1], "a workspace move alone re-emits the window")
         let nowFloating = WindowBroadcastSnapshot(
-            title: "editor", workspaceId: 1, floating: true, column: nil, row: nil)
+            title: "editor", workspaceId: 1, floating: true, column: nil, row: nil, frame: nil)
         wdiff = WindowBroadcastDiff.changes(old: [1: snapA], new: [1: nowFloating])
         expectEqual(wdiff.changed, [1], "a floating flip alone re-emits the window")
+        // IPC-8: a change in NOTHING BUT the frame batches into
+        // WindowLayoutsChanged (server.rs:734-765) instead of a full
+        // WindowOpenedOrChanged - the event never fired before.
+        let geomA = [
+            UInt64(1): WindowBroadcastSnapshot(
+                title: "a", workspaceId: 1, floating: false, column: 0, row: 0,
+                frame: CGRect(x: 0, y: 0, width: 700, height: 800))
+        ]
+        let geomB = [
+            UInt64(1): WindowBroadcastSnapshot(
+                title: "a", workspaceId: 1, floating: false, column: 0, row: 0,
+                frame: CGRect(x: 0, y: 0, width: 900, height: 800))
+        ]
+        let gdiff = WindowBroadcastDiff.changes(old: geomA, new: geomB)
+        expect(
+            gdiff.changed.isEmpty && gdiff.layoutChanged == [1],
+            "a geometry-only change is a WindowLayoutsChanged, never a full re-emit")
         wdiff = WindowBroadcastDiff.changes(old: [1: snapA, 2: snapB], new: [2: snapB])
         expectEqual(wdiff.closed, [1], "a vanished window closes")
         expect(wdiff.changed.isEmpty, "and the survivor stays quiet")

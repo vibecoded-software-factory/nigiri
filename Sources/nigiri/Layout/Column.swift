@@ -4,6 +4,23 @@ import ApplicationServices
 // A column: a vertical stack of windows sharing a width, with cached
 // per-slot heights and the discovered minimum width. niri: the column in
 // layout/scrolling.rs.
+// niri's ColumnWidth (scrolling.rs:236-242).
+enum ColumnWidth: Equatable {
+    // Proportion of the current view width.
+    case proportion(CGFloat)
+    // Fixed width in logical pixels.
+    case fixed(CGFloat)
+}
+
+extension ColumnWidth: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .proportion(let p): return String(format: "%.0f%%", p * 100)
+        case .fixed(let px): return "\(Int(px))px"
+        }
+    }
+}
+
 final class Column {
     // private(set) + mutators, for the same reason focusedWindowIndex is:
     // every membership change also has to drop cachedHeights (the per-slot
@@ -20,9 +37,36 @@ final class Column {
         clampFocus()
     }
 
-    func setWindows(_ new: [ManagedWindow]) { mutate { $0 = new } }
-    func add(_ window: ManagedWindow) { mutate { $0.append(window) } }
+    // A tile ENTERS a column as auto_1 (niri's add_tile, scrolling.rs:
+    // 4297-4312): whatever manual height or weight it carried in its old
+    // column does not travel. Without this an expelled window kept its
+    // fixed height and would not fill its fresh single-window column, and
+    // a consumed one kept a stale weight. Existing members' weights are
+    // untouched - upstream does NOT re-equalize on membership changes.
+    private func enterAsAuto(_ window: ManagedWindow) {
+        window.manualHeightPx = nil
+        window.heightWeight = 1
+        window.presetHeightIndex = nil
+    }
+
+    func setWindows(_ new: [ManagedWindow]) {
+        mutate {
+            new.forEach(enterAsAuto)
+            $0 = new
+        }
+    }
+    func add(_ window: ManagedWindow) {
+        enterAsAuto(window)
+        mutate { $0.append(window) }
+    }
     func insert(_ window: ManagedWindow, at index: Int) {
+        enterAsAuto(window)
+        mutate { $0.insert(window, at: min(max(0, index), $0.count)) }
+    }
+    // An IN-COLUMN reorder: the window never left, so its height data
+    // travels with it - upstream's move_window_up/down swaps the data
+    // entries alongside the tiles, resetting nothing.
+    func reinsert(_ window: ManagedWindow, at index: Int) {
         mutate { $0.insert(window, at: min(max(0, index), $0.count)) }
     }
     @discardableResult
@@ -111,17 +155,35 @@ final class Column {
     var cachedHeights: [CGFloat]? = nil {
         didSet { if cachedHeights == nil { cachedMinWidth = nil } }
     }
-    // Proportion of the usable screen width this column requests, matching
-    // niri's default-column-width (layout.kdl: `proportion 0.5`). Mutated by
-    // switch-preset-column-width and set-column-width. Deliberately does NOT
-    // invalidate cachedMinWidth: the minimum is a property of the WINDOWS
-    // (Discord's 800px floor exists no matter what width is requested), so
-    // wiping it on every resize keypress made each shrink re-fight the
-    // app's clamp from scratch - and until the re-discovery settled,
-    // placements packed every neighbor against the phantom requested width,
-    // overlapping the clamped window (verified live).
-    var widthProportion: CGFloat = ColumnLayoutEngine.defaultColumnWidth
-    // Index into ColumnLayoutEngine.presetColumnSizes if widthProportion
+    // The width this column requests, matching niri's ColumnWidth
+    // (scrolling.rs:236-242): a proportion of the view, or FIXED logical
+    // pixels - fixed survives gap and monitor changes instead of drifting
+    // with them (audit LAY-6; px used to degrade to a proportion here).
+    // Mutated by switch-preset-column-width and set-column-width.
+    // Deliberately does NOT invalidate cachedMinWidth: the minimum is a
+    // property of the WINDOWS (Discord's 800px floor exists no matter what
+    // width is requested), so wiping it on every resize keypress made each
+    // shrink re-fight the app's clamp from scratch - and until the
+    // re-discovery settled, placements packed every neighbor against the
+    // phantom requested width, overlapping the clamped window (verified
+    // live).
+    var width: ColumnWidth = .proportion(ColumnLayoutEngine.defaultColumnWidth)
+    // niri's is_full_width (scrolling.rs:170): full width is a flag OF THE
+    // COLUMN, so several columns can hold it at once and it travels with
+    // the column through moves - the per-workspace maximizedIndex it
+    // replaces allowed exactly one and needed re-anchoring in every
+    // mutator (audit LAY-5).
+    var isFullWidth = false
+    // niri's is_pending_fullscreen / is_pending_maximized (scrolling.rs:
+    // 171-175): fullscreen (raw output) and maximize-to-edges (working
+    // area) are states OF THE COLUMN - they travel with it through moves
+    // and workspace changes, and they die with it, where the per-workspace
+    // window reference they replace had to be cancelled by hand in every
+    // mutator (audit LAY-4). A tabbed column fullscreens whatever tab is
+    // current, like upstream rendering the column's active tile.
+    var isPendingFullscreen = false
+    var isPendingMaximized = false
+    // Index into ColumnLayoutEngine.presetColumnSizes if the width
     // currently matches a preset exactly (niri's preset_width_idx) - nil
     // once a manual ±10% adjustment moves it off a preset value.
     var presetWidthIndex: Int? = nil

@@ -10,7 +10,13 @@ struct Regex {
 
     init(_ pattern: String) {
         self.pattern = pattern
-        regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        // CASE-SENSITIVE, like niri: rust's regex::Regex matches case
+        // sensitively unless the pattern itself opts out with (?i)
+        // (niri-config/src/utils.rs RegexEq). Forcing .caseInsensitive here
+        // made `app-id="Firefox"` match different windows than in niri.
+        // NSRegularExpression understands inline (?i) too, so a config that
+        // wants insensitivity spells it the same way in both.
+        regex = try? NSRegularExpression(pattern: pattern, options: [])
         if regex == nil { print("[config] invalid regex, ignored: \(pattern)") }
     }
 
