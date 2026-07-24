@@ -1,11 +1,15 @@
 import AppKit
 
-// niri's layout.border: a plain stroke around every VISIBLE non-focused
-// managed window - the focused one wears the gradient focus ring instead.
-// Off by default, exactly like niri. One borderless click-through window
-// per bordered app window, pooled and repositioned every animation tick
-// alongside the ring (they used to snap only at settle, which read as the
-// border lagging behind its window all the way across the screen).
+// niri's layout.border: a plain stroke around EVERY visible managed window -
+// the focused one in active-color, the rest in inactive-color
+// (src/layout/tile.rs:1283-1289 draws it for every tile, focused included).
+// Off by default, exactly like niri (niri-config/src/appearance.rs:273).
+// The focus ring is a separate decoration on a single window; it is not this
+// one's job, and this overlay must stay dark when `border { off }`.
+// One borderless click-through window per bordered app window, pooled and
+// repositioned every animation tick alongside the ring (they used to snap
+// only at settle, which read as the border lagging behind its window all the
+// way across the screen).
 //
 // The stroke is a CAShapeLayer bezier, NOT a CALayer borderWidth. They target
 // the same geometry, but a thick CALayer border draws a squared-off corner

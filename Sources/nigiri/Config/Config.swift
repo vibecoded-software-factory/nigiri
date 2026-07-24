@@ -163,11 +163,12 @@ struct NigiriConfig {
         calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1)
     var ringTo: NSColor = NSColor(
         calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1)
-    // niri draws the focus ring around EVERY window - active colour on the
-    // focused one, inactive-color on the rest. nigiri used to have no
-    // inactive ring at all, so with `border { off }` (niri's default, and
-    // this user's config) non-focused windows wore no decoration whatsoever.
-    // niri: rgb(80,80,80) (appearance.rs).
+    // focus-ring's inactive-color, rgb(80,80,80)
+    // (niri-config/src/appearance.rs:249). It colors the ring of the active
+    // tile on a NON-FOCUSED OUTPUT (src/layout/focus_ring.rs picks it when
+    // is_active is false, and is_active is per-monitor). niri never puts a
+    // ring on a second window of the same monitor: the ring is emitted for
+    // one tile only (src/layout/scrolling.rs:2946).
     var ringInactiveColor: NSColor = NSColor(
         calibratedRed: 80 / 255.0, green: 80 / 255.0, blue: 80 / 255.0, alpha: 1)
     // niri's urgent-color: rgb(155,0,0) (appearance.rs:250). Parsed and

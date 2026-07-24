@@ -1231,6 +1231,31 @@ enum SelfTest {
             !TilingEngine.isDialogLike(title: "", hasDefaultButton: false, hasCancelButton: false),
             "a borderless panel/bar (dialog subrole, no title, no buttons) is not adopted")
 
+        // niri's center_preferring_top_left_in_area (src/utils/mod.rs:525-535).
+        // A window that FITS is centered; one LARGER than the area pins its
+        // top-left corner inside it, because each offset is clamped at zero.
+        // The plain `mid - size/2` this replaced went negative on both axes
+        // and pushed such a window off the top-left of the screen.
+        let area = CGRect(x: 0, y: 25, width: 1470, height: 897)
+        let fits = TilingEngine.centerPreferringTopLeft(
+            size: CGSize(width: 600, height: 400), in: area)
+        expect(
+            abs(fits.x - 435) < 0.01 && abs(fits.y - 273.5) < 0.01,
+            "a floating window that fits is centered in the working area")
+        let oversized = TilingEngine.centerPreferringTopLeft(
+            size: CGSize(width: 2000, height: 1200), in: area)
+        expect(
+            oversized.x == area.minX && oversized.y == area.minY,
+            "one larger than the working area pins its top-left corner, never negative")
+        // The area's origin is honoured, not assumed to be zero: the working
+        // area starts below the menu bar and shrinks further under a strut.
+        let offsetArea = TilingEngine.centerPreferringTopLeft(
+            size: CGSize(width: 100, height: 100),
+            in: CGRect(x: 200, y: 100, width: 300, height: 300))
+        expect(
+            offsetArea.x == 300 && offsetArea.y == 200,
+            "centering is relative to the working area's origin")
+
         // REGRESSION (item 48) + audit LAY-4: fullscreen is a per-COLUMN
         // flag (is_pending_fullscreen, scrolling.rs:171-175), and the
         // workspace's fullscreenWindow is DERIVED from it - so pulling the
