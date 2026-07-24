@@ -28,11 +28,25 @@ if cliArgs.first == "msg" {
     }
     let line = request + "\n"
     _ = line.utf8CString.withUnsafeBufferPointer { write(fd, $0.baseAddress, $0.count - 1) }
+    // niri's client contract: a request gets ONE reply line - print it and
+    // exit. The server keeps the connection open serving requests in a loop
+    // (upstream's reply-then-events contract), so reading to EOF here hangs
+    // forever. Only an event stream keeps reading until the server goes away.
+    let streaming = request == "event-stream" || request == "\"EventStream\""
     var chunk = [UInt8](repeating: 0, count: 4096)
+    var buffer = [UInt8]()
     while true {
         let n = read(fd, &chunk, 4096)
         guard n > 0 else { break }
-        FileHandle.standardOutput.write(Data(chunk[0..<n]))
+        if streaming {
+            FileHandle.standardOutput.write(Data(chunk[0..<n]))
+            continue
+        }
+        buffer.append(contentsOf: chunk[0..<n])
+        if let newline = buffer.firstIndex(of: 0x0A) {
+            FileHandle.standardOutput.write(Data(buffer[...newline]))
+            break
+        }
     }
     exit(0)
 }
