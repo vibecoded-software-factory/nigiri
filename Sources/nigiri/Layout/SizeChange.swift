@@ -20,15 +20,37 @@ enum SizeChange {
     case setFixed(CGFloat)
     case adjustFixed(CGFloat)
 
-    // Floating windows are resized by a plain percentage delta of their own
-    // current size (they have no column proportion to speak of), so the
-    // absolute forms are interpreted as "go to that percentage".
-    var asFloatingDelta: CGFloat {
+    // niri's floating set_window_width/set_window_height, one axis
+    // (src/layout/floating.rs:744-830): the SET forms are ABSOLUTE -
+    // SetFixed is exact pixels, SetProportion that share of the WORKING
+    // AREA - and only the Adjust forms are deltas (AdjustFixed in pixels,
+    // AdjustProportion in points of proportion of the working area).
+    // Result rounded and clamped to [1, 100000] exactly like upstream; the
+    // min/max-size clamp niri applies next has no AX equivalent - the
+    // window itself refuses, and the refusal is memoized at the boundary.
+    //
+    // This replaces `asFloatingDelta`, which collapsed all four forms into
+    // one delta: `set-column-width "50%"` GREW a floating window by half
+    // the screen instead of setting it to half - the exact bug the header
+    // above records as fixed for the tiled path, reintroduced floating.
+    func resolvedFloating(current: CGFloat, available: CGFloat) -> CGFloat {
+        let maxPx: CGFloat = 100000
+        let maxProp: CGFloat = 10000
+        let value: CGFloat
         switch self {
-        case .adjustProportion(let d), .setProportion(let d): return d
-        case .adjustFixed(let px), .setFixed(let px): return px
+        case .setFixed(let px):
+            value = px
+        case .setProportion(let p):
+            value = available * min(max(p / 100, 0), maxProp)
+        case .adjustFixed(let d):
+            value = current + d
+        case .adjustProportion(let d):
+            let prop = min(max(current / available + d / 100, 0), maxProp)
+            value = available * prop
         }
+        return min(max(value.rounded(), 1), maxPx)
     }
+
 }
 
 extension SizeChange {

@@ -58,9 +58,14 @@ if cliArgs.first == "check-config" {
         print("cannot read \(path)")
         exit(1)
     }
-    var visited: Set<String> = []
-    let expanded = NigiriConfig.expandIncludes(
-        text, baseDir: (path as NSString).deletingLastPathComponent, visited: &visited)
+    var read: Set<String> = []
+    guard
+        let expanded = NigiriConfig.expandIncludes(
+            text, baseDir: (path as NSString).deletingLastPathComponent, stack: [path], read: &read)
+    else {
+        print("config refused: a required include failed (see above)")
+        exit(1)
+    }
     let parsed = NigiriConfig.parse(expanded)
     print("--- \(path)")
     print("mod-key: \(parsed.modKey)")

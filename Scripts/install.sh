@@ -89,4 +89,4 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo "Nigiri.app installed and started (log: /tmp/nigiri.log)"
 echo "if it asks for permission: it is ONE 'nigiri' row in Accessibility - tick it once"
-echo "config is live: ~/.config/nigiri/config.kdl - this script is only needed after code changes"
+echo "config is live: ~/.config/niri/config.kdl (or ~/.config/nigiri/config.kdl if no niri config exists) - this script is only needed after code changes"

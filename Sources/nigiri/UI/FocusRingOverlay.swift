@@ -194,15 +194,15 @@ final class FocusRingOverlay: NSObject {
     // The config file's focus-ring knobs, applied on live reload. The
     // global width is set by the caller (it also drives the overlay
     // expansion in show); this just restyles the layers.
-    func applyStyle(width: CGFloat, from: NSColor, to: NSColor) {
-        ringView.applyStyle(width: width, from: from, to: to)
+    func applyStyle(width: CGFloat, from: NSColor, to: NSColor, angle: CGFloat = 180) {
+        ringView.applyStyle(width: width, from: from, to: to, angle: angle)
     }
 
     // niri's shadow section. macOS draws every window's own shadow and there
     // is no way to replace it, so these values drive the one shadow nigiri
     // actually renders: the focused window's ring glow.
-    func applyShadow(on: Bool, softness: CGFloat, offset: CGSize, color: NSColor) {
-        ringView.applyShadow(on: on, softness: softness, offset: offset, color: color)
+    func applyShadow(on: Bool, softness: CGFloat, spread: CGFloat, offset: CGSize, color: NSColor) {
+        ringView.applyShadow(on: on, softness: softness, spread: spread, offset: offset, color: color)
     }
 }
 
@@ -239,18 +239,31 @@ private final class RingView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func applyShadow(on: Bool, softness: CGFloat, offset: CGSize, color: NSColor) {
+    func applyShadow(on: Bool, softness: CGFloat, spread: CGFloat, offset: CGSize, color: NSColor) {
         shadowConfigured = on
         gradientLayer.shadowOpacity = on ? 1 : 0
-        gradientLayer.shadowRadius = softness / 2
+        // CALayer has no true spread (CSS expands the outline); folding it
+        // into the blur radius is the closest its shadow model offers.
+        // Default 5, like niri's Shadow::default().spread - it used to be
+        // parsed away entirely.
+        gradientLayer.shadowRadius = (softness + spread) / 2
         gradientLayer.shadowOffset = offset
         gradientLayer.shadowColor = color.cgColor
     }
     private var shadowConfigured = false
 
-    func applyStyle(width: CGFloat, from: NSColor, to: NSColor) {
+    func applyStyle(width: CGFloat, from: NSColor, to: NSColor, angle: CGFloat = 180) {
         borderWidth = width
         gradientLayer.colors = [from.cgColor, to.cgColor]
+        // niri's CSS gradient angle (default 180 = to bottom,
+        // appearance.rs:92): 0 points up, 90 right. Mapped onto the layer's
+        // y-up unit square; only 45 used to be accepted, and rejected at
+        // the parser at that.
+        let rad = angle * .pi / 180
+        let dx = sin(rad) / 2
+        let dy = cos(rad) / 2
+        gradientLayer.startPoint = CGPoint(x: 0.5 - dx, y: 0.5 + dy)
+        gradientLayer.endPoint = CGPoint(x: 0.5 + dx, y: 0.5 - dy)
         maskLayer.lineWidth = width
         // The glow keeps deriving from the ring's own start color, same
         // 0x77 alpha as the original niri rule it mirrors - unless shadow{}

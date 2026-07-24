@@ -15,11 +15,10 @@ extension TilingEngine {
     // mouse-driven positions we don't have any equivalent of here.
     func focusColumn(delta: Int) {
         if workspace.isFloatingActive {
-            guard !workspace.floatingWindows.isEmpty else { return }
-            workspace.moveFloatingFocus(by: delta)
-            focusCurrentColumn()
-            updateRing()
-            print("focus-floating-\(delta < 0 ? "prev" : "next") -> \(describeFocus())")
+            // niri's focus_left/right in the floating space is the axial
+            // pick, not the next entry of an arbitrary list (workspace.rs
+            // routes to floating.focus_left/right).
+            focusFloatingGeometric(dx: delta, dy: 0)
             return
         }
         guard !workspace.columns.isEmpty else { return }
@@ -46,11 +45,10 @@ extension TilingEngine {
     }
     func focusColumnEdge(first: Bool) {
         if workspace.isFloatingActive {
-            guard !workspace.floatingWindows.isEmpty else { return }
-            workspace.focus(floating: first ? 0 : workspace.floatingWindows.count - 1)
-            focusCurrentColumn()
-            updateRing()
-            print("focus-floating-\(first ? "first" : "last") -> \(describeFocus())")
+            // niri: focus-column-first/last in the floating space are the
+            // GEOMETRIC leftmost/rightmost (workspace.rs:924-938), not the
+            // ends of the list order.
+            focusFloatingExtreme(first ? .leftmost : .rightmost)
             return
         }
         guard !workspace.columns.isEmpty else { return }
@@ -101,196 +99,64 @@ extension TilingEngine {
     // (DIRECTIONAL_MOVE_PX in src/layout/floating.rs), animated like every
     // other movement. The same move keys drive this or the column/stack
     // moves depending on which group holds focus - exactly niri's dispatch.
-    func moveFloatingWindow(dx: CGFloat, dy: CGFloat) {
-        guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else { return }
-        let w = workspace.floatingWindows[workspace.floatingFocusedIndex]
+    func moveFloatingWindow(dx: CGFloat, dy: CGFloat, of window: ManagedWindow? = nil) {
+        guard let w = window ?? focusedFloatingWindow() else { return }
         guard let frame = settledFrame(of: w) else { return }
         animateFrames([(window: w, frame: frame.offsetBy(dx: dx, dy: dy))]) { _ in }
         print("move-floating-window (\(Int(dx)),\(Int(dy))) -> \(w.title)")
     }
 
+    // niri's move-floating-window (MoveFloatingWindow { x, y }): each axis
+    // is a PositionChange - SetFixed places within the working area,
+    // AdjustFixed nudges (floating.rs move_to/move_by). The proportion
+    // spellings are not part of that type.
+    func moveFloatingWindowPosition(x: SizeChange, y: SizeChange, of window: ManagedWindow? = nil) -> Bool {
+        guard let w = window ?? focusedFloatingWindow() else { return true }
+        guard let frame = settledFrame(of: w) else { return true }
+        let area = usableScreen().frame
+        var origin = frame.origin
+        switch x {
+        case .setFixed(let v): origin.x = area.minX + v
+        case .adjustFixed(let d): origin.x += d
+        default:
+            print("[action] move-floating-window takes fixed positions, not percentages")
+            return false
+        }
+        switch y {
+        case .setFixed(let v): origin.y = area.minY + v
+        case .adjustFixed(let d): origin.y += d
+        default:
+            print("[action] move-floating-window takes fixed positions, not percentages")
+            return false
+        }
+        animateFrames([(window: w, frame: CGRect(origin: origin, size: frame.size))]) { _ in }
+        print("move-floating-window -> (\(Int(origin.x)),\(Int(origin.y)))")
+        return true
+    }
+
     // niri's set-window-width/height on a floating window (src/layout/
-    // floating.rs): the delta is a percentage of the working area applied
-    // to the window's own size, resizing in place - driven by the same
-    // ±10% keys as tiled sizing, dispatched by which group holds focus.
-    // A fixed-size dialog just refuses the write (logged once, then the
-    // refusal is remembered - see ManagedWindow.lastRequestedFrame).
-    func resizeFloatingWindow(widthDeltaPercent: CGFloat = 0, heightDeltaPercent: CGFloat = 0) {
-        guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else { return }
-        let w = workspace.floatingWindows[workspace.floatingFocusedIndex]
+    // floating.rs:744-830): each SizeChange form resolved against the
+    // WORKING AREA (not the raw screen - niri sizes against
+    // working_area.size), one axis at a time - driven by the same keys as
+    // tiled sizing, dispatched by which group holds focus. A fixed-size
+    // dialog just refuses the write (logged once, then the refusal is
+    // remembered - see ManagedWindow.lastRequestedFrame).
+    func resizeFloatingWindow(
+        width: SizeChange? = nil, height: SizeChange? = nil, of window: ManagedWindow? = nil
+    ) {
+        guard let w = window ?? focusedFloatingWindow() else { return }
         guard let frame = settledFrame(of: w) else { return }
-        let screenFrame = currentRawScreenFrame()
+        let area = usableScreen().frame
         var target = frame
-        target.size.width = max(50, frame.width + screenFrame.width * widthDeltaPercent / 100)
-        target.size.height = max(50, frame.height + screenFrame.height * heightDeltaPercent / 100)
+        if let width {
+            target.size.width = width.resolvedFloating(current: frame.width, available: area.width)
+        }
+        if let height {
+            target.size.height = height.resolvedFloating(current: frame.height, available: area.height)
+        }
         animateFrames([(window: w, frame: target)]) { _ in }
         print(
-            "resize-floating-window \(Int(widthDeltaPercent != 0 ? widthDeltaPercent : heightDeltaPercent))% -> \(w.title)"
-        )
-    }
-
-    // Edge-addressed resize for a floating window: the NAMED edge moves,
-    // the opposite edge stays pinned. resizeFloatingWindow only ever moved
-    // the bottom/right edges (origin pinned by AX convention), so
-    // "shrink this from the top" or "grow it out to the left" were simply
-    // impossible. Positive delta always grows outward through that edge,
-    // negative shrinks inward from it - the delta is a percentage of the
-    // screen's matching axis, like every other resize here.
-    func resizeFloatingWindowEdge(_ edge: String, deltaPercent: CGFloat) {
-        guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else { return }
-        let w = workspace.floatingWindows[workspace.floatingFocusedIndex]
-        guard let frame = settledFrame(of: w) else { return }
-        let screen = usableScreen().frame
-        var target = frame
-        switch edge {
-        case "left":
-            let newWidth = max(50, frame.width + screen.width * deltaPercent / 100)
-            target.origin.x = frame.maxX - newWidth  // right edge pinned
-            target.size.width = newWidth
-        case "right":
-            target.size.width = max(50, frame.width + screen.width * deltaPercent / 100)
-        case "top":
-            let newHeight = max(50, frame.height + screen.height * deltaPercent / 100)
-            target.origin.y = frame.maxY - newHeight  // bottom edge pinned
-            target.size.height = newHeight
-        case "bottom":
-            target.size.height = max(50, frame.height + screen.height * deltaPercent / 100)
-        default:
-            print("resize-edge: unknown edge \"\(edge)\" (left/right/top/bottom)")
-            return
-        }
-        animateFrames([(window: w, frame: target)]) { _ in }
-        print("resize-edge \(edge) \(deltaPercent > 0 ? "+" : "")\(Int(deltaPercent))% -> \(w.title)")
-    }
-
-    // Edge-addressed resize for TILED windows: splitter semantics. The
-    // named edge is a boundary shared with the neighbor on that side, and
-    // moving it TRANSFERS space across it - my window changes by the delta,
-    // the neighbor absorbs the exact opposite, and the opposite edge stays
-    // where the user is looking. (A first cut collapsed every edge onto
-    // plain width/height, which made "shrink from the top" and "shrink
-    // from the bottom" visually identical - not what touching an edge
-    // means.) Positive delta always grows the focused window through that
-    // edge, negative shrinks it from that edge, matching the floating
-    // variant.
-    func resizeTiledEdge(_ edge: String, deltaPercent: CGFloat) {
-        guard let column = focusedColumn() else { return }
-        // The discovered floors are read BEFORE the epoch is bumped, and the
-        // bump comes after - same shape as setColumnWidth and
-        // switchPresetColumnWidth. This site was left out when item 7 was
-        // fixed (it lists three, the commit touched two), so here the floor
-        // went back to being nil for everything downstream: the "right"
-        // branch handed setColumnWidth a column whose validMinWidth answered
-        // nil, and the "left" branch traded in raw proportions - with a
-        // column resting on its 800px floor the reflow clamped it back while
-        // the neighbour did shrink, and the pair's untouched right edge
-        // drifted. Which is precisely the drift the comment below says was
-        // caught live by measurement.
-        let myFloor = column.validMinWidth
-        let neighborFloor =
-            workspace.focusedIndex > 0
-            ? workspace.columns[workspace.focusedIndex - 1].validMinWidth : nil
-        ColumnLayoutEngine.newEpoch()
-        switch edge {
-        case "right":
-            // My right edge IS the strip boundary the plain width action
-            // already moves (columns pack left-to-right, so the left edge
-            // stays put and later columns shift): no neighbor transfer.
-            setColumnWidth(.adjustProportion(deltaPercent), knownFloor: myFloor)
-
-        case "left":
-            // Boundary with the left-neighbor column: it absorbs whatever I
-            // give up (or yields what I take), so in virtual coordinates my
-            // right edge - the sum of both widths plus everything before -
-            // does not move. The trade happens in EFFECTIVE PIXELS, not
-            // proportions: a column resting on its minimum floor (Discord
-            // at 800px with a 710px proportion) has an effective width its
-            // proportion doesn't describe, and trading proportions there
-            // changed the pair's real total - the untouched right edge
-            // visibly drifted (caught live by measurement).
-            let idx = workspace.focusedIndex
-            guard idx > 0 else {
-                print("resize-edge left: no column to the left to trade space with")
-                return
-            }
-            let neighbor = workspace.columns[idx - 1]
-            let usableWidth = usableScreen().usableWidth
-            guard usableWidth > 0 else { return }
-            // The floors captured above, not c.validMinWidth: the epoch was
-            // bumped, so asking the column now always answers nil.
-            func floor(_ c: Column) -> CGFloat { (c === column ? myFloor : neighborFloor) ?? 0 }
-            func effectivePx(_ c: Column) -> CGFloat {
-                max(
-                    ColumnLayoutEngine.width(forProportion: c.widthProportion, usableWidth: usableWidth),
-                    floor(c))
-            }
-            func clampPx(_ px: CGFloat, for c: Column) -> CGFloat {
-                min(usableWidth, max(max(usableWidth * 0.05, floor(c)), px))
-            }
-            let deltaPx = usableWidth * deltaPercent / 100
-            let myOldPx = effectivePx(column)
-            let myApplied = clampPx(myOldPx + deltaPx, for: column) - myOldPx
-            let neighborOldPx = effectivePx(neighbor)
-            let neighborNewPx = clampPx(neighborOldPx - myApplied, for: neighbor)
-            let absorbedPx = neighborOldPx - neighborNewPx
-            // Only trade what the neighbor can actually absorb/yield, so
-            // the pair's total stays constant to the pixel.
-            column.widthProportion = ColumnLayoutEngine.proportion(
-                forWidth: myOldPx + absorbedPx, usableWidth: usableWidth)
-            neighbor.widthProportion = ColumnLayoutEngine.proportion(
-                forWidth: neighborNewPx, usableWidth: usableWidth)
-            column.presetWidthIndex = nil
-            neighbor.presetWidthIndex = nil
-            reflow()
-            print(
-                "resize-edge left \(deltaPercent > 0 ? "+" : "")\(Int(deltaPercent))% -> \(Int(myOldPx + absorbedPx))px (neighbor \(Int(neighborNewPx))px)"
-            )
-
-        case "top", "bottom":
-            // Boundary with the stack neighbor above/below: both sides
-            // become manually-sized at their current heights, then the
-            // boundary moves by the delta - clamped so neither side drops
-            // under the 20px floor. The screen edges (top of the first
-            // window, bottom of the last) are not boundaries - there is no
-            // neighbor to trade with and no vertical scrolling to absorb it.
-            guard column.windows.indices.contains(column.focusedWindowIndex) else { return }
-            let k = column.focusedWindowIndex
-            let neighborIndex = edge == "top" ? k - 1 : k + 1
-            guard column.windows.indices.contains(neighborIndex) else {
-                print("resize-edge \(edge): that edge is the screen, not a window boundary")
-                return
-            }
-            let w = column.windows[k]
-            let neighbor = column.windows[neighborIndex]
-            guard let wFrame = WindowMover.currentFrame(w.axElement),
-                let nFrame = WindowMover.currentFrame(neighbor.axElement)
-            else { return }
-            let wH = w.manualHeightPx ?? wFrame.height
-            let nH = neighbor.manualHeightPx ?? nFrame.height
-            let columnHeight = usableScreen().frame.height - 2 * ColumnLayoutEngine.gap
-            let d = columnHeight * deltaPercent / 100
-            let dClamped = max(min(d, nH - 20), 20 - wH)
-            w.manualHeightPx = wH + dClamped
-            neighbor.manualHeightPx = nH - dClamped
-            column.cachedHeights = nil
-            reflow()
-            print(
-                "resize-edge \(edge) \(deltaPercent > 0 ? "+" : "")\(Int(deltaPercent))% -> \(Int(wH + dClamped))px (neighbor \(Int(nH - dClamped))px)"
-            )
-
-        default:
-            print("resize-edge: unknown edge \"\(edge)\" (left/right/top/bottom)")
-        }
-    }
-
-    // One entry point for "resize from this edge" regardless of which group
-    // holds focus.
-    func resizeEdge(_ edge: String, deltaPercent: CGFloat) {
-        if workspace.isFloatingActive {
-            resizeFloatingWindowEdge(edge, deltaPercent: deltaPercent)
-        } else {
-            resizeTiledEdge(edge, deltaPercent: deltaPercent)
-        }
+            "resize-floating-window \((width ?? height).map(String.init(describing:)) ?? "?") -> \(w.title)")
     }
 
     // Swaps the focused column's position with its neighbor (niri's
@@ -373,6 +239,9 @@ extension TilingEngine {
         column.cachedHeights = nil
         let newColumn = Column()
         newColumn.setWindows([window])
+        // The expelled tile keeps its width (niri's RemovedTile carries it,
+        // scrolling.rs:1994-2030) - a tile's width IS its column's.
+        newColumn.width = column.width
         workspace.insertColumn(newColumn, at: columnIndex + 1)
         workspace.focus(column: columnIndex + 1)
         print(
@@ -382,58 +251,68 @@ extension TilingEngine {
         focusCurrentColumn()
     }
 
-    // niri converts Auto heights to weights that "preserve their visual
-    // heights at the moment of the conversion". Same idea here: freeze what
-    // the stack looks like RIGHT NOW into weights, so the window that was
-    // deliberately tall stays proportionally tall after a sibling joins or
-    // leaves instead of the column re-equalizing behind the user's back.
-    func captureHeightWeights(_ column: Column) {
-        let autos = column.windows.filter { $0.manualHeightPx == nil }
-        guard autos.count > 1 else {
-            column.windows.forEach { $0.heightWeight = 1 }
-            return
+    // niri's convert_heights_to_auto (scrolling.rs:5070-5083): EVERY height
+    // in the column - fixed ones included - becomes Auto, weighted to
+    // preserve the apparent heights, centered so the median window gets
+    // weight 1. Runs only inside a height-resize on an Auto window (and
+    // toggle_window_height), NEVER on membership changes: a comment here
+    // used to cite this function to justify freezing weights on every
+    // consume/expel, which upstream does not do (audit LAY-3) - there, the
+    // arriving tile enters as auto_1 and the rest keep their weights.
+    func convertHeightsToAuto(_ column: Column) {
+        let heights = column.windows.map { WindowMover.currentFrame($0.axElement)?.height ?? 0 }
+        for (w, weight) in zip(column.windows, ColumnLayoutEngine.autoWeights(preserving: heights)) {
+            w.heightWeight = weight
+            w.manualHeightPx = nil
+            w.presetHeightIndex = nil
         }
-        let heights = autos.map { WindowMover.currentFrame($0.axElement)?.height ?? 0 }
-        let total = heights.reduce(0, +)
-        guard total > 0 else { return }
-        let average = total / CGFloat(autos.count)
-        for (w, h) in zip(autos, heights) { w.heightWeight = max(0.05, h / average) }
     }
 
-    func consumeOrExpel(delta: Int) {
-        focusedColumn().map(captureHeightWeights)
-        guard let source = focusedColumn(), source.windows.indices.contains(source.focusedWindowIndex) else {
-            return
-        }
-        let sourceIndex = workspace.focusedIndex
+    func consumeOrExpel(delta: Int, id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "consume-or-expel") else { return }
+        // Only tiled windows consume/expel; a floating target is upstream's
+        // no-op (the scrolling space doesn't hold it).
+        guard case .tiled(let wi, let sourceIndex, let row) = t.location else { return }
+        let ws = workspaces[wi]
+        let source = ws.columns[sourceIndex]
+        // Focus follows only when the target IS the focused window - an
+        // id-addressed action on any other window leaves focus alone.
+        let follow = targetIsFocused(t)
         let neighborIndex = sourceIndex + delta
         var verifyFits: (() -> Void)?
 
         if source.windows.count == 1 {
-            guard workspace.columns.indices.contains(neighborIndex) else { return }
+            guard ws.columns.indices.contains(neighborIndex) else { return }
             guard let window = source.removeWindow(at: 0) else { return }
-            let target = workspace.columns[neighborIndex]
+            let target = ws.columns[neighborIndex]
             target.add(window)
-            target.focus(row: target.windows.count - 1)
-            workspace.removeColumn(at: sourceIndex)
+            // The consumed tile becomes the column's ACTIVE row only when
+            // it was the focused window (add_tile_to_column's activate =
+            // source_tile_was_active, scrolling.rs:1830/911-916) - an
+            // id-addressed consume must not steal the target column's focus.
+            if follow { target.focus(row: target.windows.count - 1) }
+            ws.removeColumn(at: sourceIndex)
             // Removing sourceIndex shifts every later index down by one - if
             // the target was to the right (delta > 0) it lands back at
             // sourceIndex; if it was to the left (delta < 0), unaffected,
             // still at sourceIndex - 1.
-            workspace.focus(column: delta < 0 ? sourceIndex - 1 : sourceIndex)
+            if follow { ws.focus(column: delta < 0 ? sourceIndex - 1 : sourceIndex) }
             verifyFits = { self.expelBackIfStackOverflows(target, consumed: window) }
         } else {
-            guard let window = source.removeWindow(at: source.focusedWindowIndex) else { return }
+            guard let window = source.removeWindow(at: row) else { return }
             let newColumn = Column()
             newColumn.setWindows([window])
+            // niri: the expelled tile's new column inherits its width
+            // (scrolling.rs:1848-1855, 1942-1949), not default-column-width.
+            newColumn.width = source.width
             let insertAt = delta < 0 ? sourceIndex : sourceIndex + 1
-            workspace.insertColumn(newColumn, at: insertAt)
-            workspace.focus(column: insertAt)
+            ws.insertColumn(newColumn, at: insertAt)
+            if follow { ws.focus(column: insertAt) }
         }
         reflow(onSettled: verifyFits)
-        focusCurrentColumn()
+        if follow { focusCurrentColumn() }
         print(
-            "consume-or-expel-\(delta < 0 ? "left" : "right") -> \(workspace.columns.count) column(s), focused column \(workspace.focusedIndex) (\(describeFocus()))"
+            "consume-or-expel-\(delta < 0 ? "left" : "right") -> \(ws.columns.count) column(s)"
         )
     }
 
@@ -443,29 +322,39 @@ extension TilingEngine {
     // window. Unlike consume-or-expel, focus does not follow the expelled
     // window; it stays on the source column.
     func expelFromColumn() {
-        focusedColumn().map(captureHeightWeights)
         guard let column = focusedColumn(), column.windows.count > 1 else { return }
         guard let window = column.removeWindow(at: column.windows.count - 1) else { return }
         let newColumn = Column()
         newColumn.setWindows([window])
+        // Same width inheritance as consume-or-expel (scrolling.rs:2016-2023).
+        newColumn.width = column.width
         workspace.insertColumn(newColumn, at: workspace.focusedIndex + 1)
         reflow()
         print("expel-window-from-column -> \(workspace.columns.count) column(s)")
     }
 
     // niri's preset-column-widths takes both `proportion` and `fixed <px>`.
-    // The model's currency is proportions, so the pixel presets convert here,
-    // where the usable width is known, and both kinds share one cycle.
-    func presetProportions() -> [CGFloat] {
+    // For the comparison seed each preset resolves to PIXELS (upstream's
+    // resolve_preset_width, scrolling.rs:4813-4818): proportions through the
+    // width formula, fixed presets are already pixels.
+    func resolvedPresetWidths() -> [CGFloat] {
         let usableWidth = usableScreen().usableWidth
         // In the DECLARED order: this list is the cycle Mod+R walks.
         return ColumnLayoutEngine.presetColumnSizes.map { size in
             switch size {
-            case .proportion(let p): return p
-            case .fixed(let px):
-                return usableWidth > 0
-                    ? ColumnLayoutEngine.proportion(forWidth: px, usableWidth: usableWidth) : 0.5
+            case .proportion(let p):
+                return ColumnLayoutEngine.width(forProportion: p, usableWidth: usableWidth)
+            case .fixed(let px): return px
             }
+        }
+    }
+
+    // A preset applies through set-column-width, exactly upstream's
+    // `SizeChange::from(preset)` (scrolling.rs:4842).
+    private func sizeChange(from preset: NigiriConfig.PresetSize) -> SizeChange {
+        switch preset {
+        case .proportion(let p): return .setProportion(p * 100)
+        case .fixed(let px): return .setFixed(px)
         }
     }
 
@@ -477,26 +366,46 @@ extension TilingEngine {
     // swallows both 1/3 and 1/2): keying the cycle off the clamped result
     // would loop forever on the first preset and never reach the ones the
     // column can actually take.
-    func switchPresetColumnWidth(delta: Int = 1) {
-        guard let column = focusedColumn() else { return }
+    func switchPresetColumnWidth(delta: Int = 1, column targetColumn: Column? = nil) {
+        // niri's toggle_width with the floating layer active cycles the
+        // FLOATING window's width presets (workspace.rs:1177-1183); this
+        // was a silent no-op here. An explicit target column (the id= form
+        // of switch-preset-window-width) skips the layer routing.
+        if targetColumn == nil, workspace.isFloatingActive {
+            switchPresetWindowWidth(delta: delta)
+            return
+        }
+        // niri clears is_full_width on toggle_width too (scrolling.rs:4906),
+        // and while full-width/maximized it BYPASSES the stored preset index
+        // (4799-4803): the comparison then runs against the REAL width the
+        // user sees - the full working area - not against a stale index.
+        guard let column = targetColumn ?? focusedColumn() else { return }
+        let wasMaximized = column.isFullWidth
         let knownFloor = column.validMinWidth
         ColumnLayoutEngine.newEpoch()
-        let presets = presetProportions()
+        let presets = ColumnLayoutEngine.presetColumnSizes
         guard !presets.isEmpty else { return }
+        let usableWidth = usableScreen().usableWidth
+        // The comparison seed runs against the width the user actually SEES:
+        // full working area while maximized, the resolved width otherwise.
+        let currentPx =
+            wasMaximized
+            ? usableWidth
+            : ColumnLayoutEngine.resolveColumnWidth(column.width, usableWidth: usableWidth)
         guard
             let nextIndex = ColumnLayoutEngine.presetIndex(
-                after: column.widthProportion, in: presets,
-                delta: delta, from: column.presetWidthIndex)
+                after: currentPx, in: resolvedPresetWidths(),
+                delta: delta, from: wasMaximized ? nil : column.presetWidthIndex)
         else { return }
+        // Upstream applies the preset THROUGH set_column_width (which clears
+        // the index and full-width) and re-stamps the index after
+        // (scrolling.rs:4842-4845).
+        let applied = applyColumnWidth(
+            sizeChange(from: presets[nextIndex]), to: column, knownFloor: knownFloor)
         column.presetWidthIndex = nextIndex
-        let clamped = clampedProportion(presets[nextIndex], for: column, knownFloor: knownFloor)
-        column.widthProportion = clamped
         reflow()
-        let clampNote =
-            abs(clamped - presets[nextIndex]) > 0.001
-            ? " (clamped to \(String(format: "%.0f%%", clamped * 100)) by a window's minimum)" : ""
         print(
-            "switch-preset-column-width\(delta < 0 ? "-back" : "") -> \(String(format: "%.0f%%", presets[nextIndex] * 100))\(clampNote)"
+            "switch-preset-column-width\(delta < 0 ? "-back" : "") -> \(applied)"
         )
     }
 
@@ -505,27 +414,70 @@ extension TilingEngine {
     // its column's, so this just cycles the column preset there; a floating
     // window gets its own width cycled through the presets (as fractions of
     // the usable width), the frame animated like every other floating move.
-    func switchPresetWindowWidth(delta: Int = 1) {
-        guard workspace.isFloatingActive else { switchPresetColumnWidth(delta: delta); return }
-        guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else { return }
-        let w = workspace.floatingWindows[workspace.floatingFocusedIndex]
+    func switchPresetWindowWidth(delta: Int = 1, id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "switch-preset-window-width") else { return }
+        // A tiled target cycles its COLUMN's presets (a tiled window's
+        // width is its column's); a floating one cycles its own.
+        if case .tiled(let wi, let ci, _) = t.location {
+            switchPresetColumnWidth(delta: delta, column: workspaces[wi].columns[ci])
+            return
+        }
+        let w = t.window
         guard let frame = settledFrame(of: w) else { return }
-        let usableWidth = usableScreen().usableWidth
-        let presets = presetProportions().map { $0 * usableWidth }
+        let presets = resolvedPresetWidths()
         guard !presets.isEmpty else { return }
-        // Cycle by INDEX, the way niri tracks preset_width_idx - not by
-        // "the first preset wider than I am now". With the comparison, a
-        // window sized off-preset (dragged by hand, or clamped by its app)
-        // jumped to an unpredictable slot and could never walk the list in
-        // order; the index makes every press advance exactly one preset.
-        let base = w.presetWidthIndex ?? presets.firstIndex { $0 > frame.width + 1 }.map { $0 - 1 } ?? -1
-        let nextIndex = ((base + delta) % presets.count + presets.count) % presets.count
+        // niri's two-tier resolution (floating.rs toggle_width): the stored
+        // preset index advances by one when there is one; off-preset (hand
+        // dragged, app-clamped) the COMPARISON seeds it - forward is the
+        // first preset strictly wider (or the first), backward the LAST
+        // strictly narrower (or the last). The old seed here (firstWider-1,
+        // then +delta) walked backward one preset too far - between 1/3 and
+        // 1/2, back gave 2/3 where niri gives 1/3 - under a comment that
+        // claimed niri does not use the comparison at all (audit LAY-7).
+        guard
+            let nextIndex = ColumnLayoutEngine.presetIndex(
+                after: frame.width, in: presets, delta: delta, from: w.presetWidthIndex)
+        else { return }
         w.presetWidthIndex = nextIndex
         let next = presets[nextIndex]
         var target = frame
         target.size.width = next
         animateFrames([(window: w, frame: target)]) { _ in }
         print("switch-preset-window-width (floating) -> \(Int(next))px")
+    }
+
+    // niri: most window actions carry an optional `id` targeting that
+    // window WHEREVER it lives, WITHOUT moving focus - each upstream
+    // handler routes to the workspace holding it (e.g. Layout::
+    // set_window_height finds it via workspaces_mut) and acts there. nil
+    // falls back to the focused window, upstream's unwrap_or(active).
+    struct WindowTarget {
+        let window: ManagedWindow
+        let location: WindowLocation
+        var workspaceIndex: Int { location.workspaceIndex }
+    }
+    // The focused floating window, or nil - the guard every floating
+    // helper used to spell out by hand.
+    func focusedFloatingWindow() -> ManagedWindow? {
+        workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex)
+            ? workspace.floatingWindows[workspace.floatingFocusedIndex] : nil
+    }
+    func windowTarget(id: UInt64?, action: String) -> WindowTarget? {
+        if let id {
+            guard let w = windowWithID(id), let loc = locate(w) else {
+                print("\(action): no window with id \(id)")
+                return nil
+            }
+            return WindowTarget(window: w, location: loc)
+        }
+        guard let w = focusedManagedWindow(), let loc = locate(w) else { return nil }
+        return WindowTarget(window: w, location: loc)
+    }
+    // Whether acting on this target should move focus and the camera: only
+    // when it IS the focused window - an id-addressed action on any other
+    // window leaves focus alone, like upstream.
+    func targetIsFocused(_ t: WindowTarget) -> Bool {
+        t.workspaceIndex == activeWorkspaceIndex && t.window === focusedManagedWindow()
     }
 
     // niri's close-window: press the window's own close button through AX -
@@ -559,26 +511,42 @@ extension TilingEngine {
     // model's reach (and drags a 700ms system animation along). So the
     // niri-shaped action is the windowed one, and the native Space is
     // available separately as native-fullscreen for whoever wants it.
-    func fullscreenWindow() {
-        setWindowedFullscreen(toEdges: false)
+    func fullscreenWindow(id: UInt64? = nil) {
+        setWindowedFullscreen(toEdges: false, id: id)
     }
 
     // Fullscreen and maximize-to-edges share the machinery but are niri's
     // two distinct states (SizingMode::Fullscreen / ::Maximized): raw
     // output vs working area. Same-mode repeat toggles off; the other mode
     // switches in place.
-    func setWindowedFullscreen(toEdges: Bool) {
-        if fullscreenWindowRef != nil {
-            if workspace.fullscreenToEdges == toEdges {
-                toggleWindowedFullscreen()
+    func setWindowedFullscreen(toEdges: Bool, id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "fullscreen-window") else { return }
+        let ws = workspaces[t.workspaceIndex]
+        if let col = ws.fullscreenColumn {
+            if ws.fullscreenToEdges == toEdges {
+                toggleWindowedFullscreen(id: id)
             } else {
-                workspace.fullscreenToEdges = toEdges
+                // Mode switch in place: flip the column's pending flags
+                // (fullscreen = raw output, maximized = working area).
+                col.isPendingFullscreen = !toEdges
+                col.isPendingMaximized = toEdges
                 print("windowed-fullscreen: \(toEdges ? "to edges" : "full output")")
-                reflow()
+                if t.workspaceIndex == activeWorkspaceIndex { reflow() }
             }
         } else {
-            workspace.fullscreenToEdges = toEdges
-            toggleWindowedFullscreen()
+            // niri EXTRACTS first: set_fullscreen on a window in a
+            // multi-window, non-tabbed column runs
+            // consume_or_expel_window_right, so the window fullscreens in
+            // its OWN column - a permanent restructuring that survives
+            // leaving fullscreen (scrolling.rs:2840-2845). The window used
+            // to stay in its stack and return to it on exit.
+            if case .tiled(_, let ci, _) = t.location {
+                let column = ws.columns[ci]
+                if column.windows.count > 1, !column.isTabbed {
+                    consumeOrExpel(delta: 1, id: t.window.id)
+                }
+            }
+            toggleWindowedFullscreen(id: id, toEdges: toEdges)
         }
     }
 
@@ -601,44 +569,54 @@ extension TilingEngine {
     // niri's toggle-windowed-fullscreen: fake fullscreen inside the
     // workspace - the focused WINDOW covers the raw screen frame, gaps and
     // all, and the layout under it is preserved.
-    func toggleWindowedFullscreen() {
-        // Exiting is checked BEFORE the tiled-focus guard: focusedColumn() is
-        // nil while the floating layer has focus, which otherwise made the
-        // toggle a silent no-op and left the workspace stuck in fullscreen.
-        if let current = fullscreenWindowRef {
-            fullscreenWindowRef = nil
-            workspace.fullscreenToEdges = false
-            if let c = workspace.columns.first(where: { $0.windows.contains { $0 === current } }) {
-                c.cachedHeights = nil
-                c.cachedMinWidth = nil
-            }
-            current.lastRequestedFrame = nil
-            current.lastActualFrame = nil
-            current.refusalCandidate = nil
+    func toggleWindowedFullscreen(id: UInt64? = nil, toEdges: Bool = false) {
+        guard let t = windowTarget(id: id, action: "toggle-windowed-fullscreen") else { return }
+        let ws = workspaces[t.workspaceIndex]
+        let active = t.workspaceIndex == activeWorkspaceIndex
+        // Exiting is checked BEFORE the tiled guard: the target may be the
+        // floating layer's focus while the workspace is fullscreen, which
+        // otherwise made the toggle a silent no-op and left the workspace
+        // stuck in fullscreen.
+        if let col = ws.fullscreenColumn {
+            let current = col.focusedWindow
+            col.isPendingFullscreen = false
+            col.isPendingMaximized = false
+            col.cachedHeights = nil
+            col.cachedMinWidth = nil
+            current?.lastRequestedFrame = nil
+            current?.lastActualFrame = nil
+            current?.refusalCandidate = nil
             // Floating windows were shoved out of view and are not part of
             // the tiling pass: put them back where they were.
-            for w in workspace.floatingWindows {
+            for w in ws.floatingWindows {
                 guard let home = w.fullscreenHome else { continue }
                 w.fullscreenHome = nil
                 _ = ColumnLayoutEngine.applyFrame(w, target: home)
             }
             print("windowed-fullscreen: off")
-            reflow()
-            updateRingImmediate()
+            if active {
+                reflow()
+                updateRingImmediate()
+            }
             return
         }
-        guard let column = focusedColumn(), let window = focusedStackWindow() else { return }
-        fullscreenWindowRef = window
+        guard case .tiled(_, let ci, _) = t.location else { return }
+        let column = ws.columns[ci]
+        let window = t.window
+        column.isPendingFullscreen = !toEdges
+        column.isPendingMaximized = toEdges
         column.cachedHeights = nil
         column.cachedMinWidth = nil
         // Immediately, not at settle: the per-tick decoration update is
         // skipped while fullscreen, so the borders would otherwise sit frozen
         // in place for the whole animation and only vanish at the end.
-        ring.hide()
-        borders.hideAll()
-        tabIndicators.hideAll()
+        if active {
+            ring.hide()
+            borders.hideAll()
+            tabIndicators.hideAll()
+        }
         print("windowed-fullscreen: \(window.title)")
-        reflow()
+        if active { reflow() }
     }
 
     // niri's maximize-window-to-edges: fake fullscreen - the focused column
@@ -649,15 +627,14 @@ extension TilingEngine {
     // its whole column - with a stack of three, the other two stay where
     // they are. nigiri used to set a workspace-wide flag that blew up the
     // entire column to the screen edges.
-    func maximizeWindowToEdges() {
-        setWindowedFullscreen(toEdges: true)
+    func maximizeWindowToEdges(id: UInt64? = nil) {
+        setWindowedFullscreen(toEdges: true, id: id)
     }
 
     // niri's consume-window-into-column (Mod+Comma): swallow the FIRST
     // window of the column to the right into the focused column's stack.
     // Focus stays where it is - unlike consume-or-expel, nothing moves out.
     func consumeWindowIntoColumn() {
-        focusedColumn().map(captureHeightWeights)
         guard let column = focusedColumn() else { return }
         let neighborIndex = workspace.focusedIndex + 1
         guard workspace.columns.indices.contains(neighborIndex) else { return }
@@ -697,7 +674,14 @@ extension TilingEngine {
             previousWorkspaceIndex = target
         }
         activeWorkspaceIndex = target
-        print("move-workspace-\(delta < 0 ? "up" : "down") -> now workspace \(target + 1)")
+        // niri restores the invariants IN THE ACT (monitor.rs:1242-1292):
+        // the trailing empty workspace, empty-above-first, and the cleanup
+        // all run right after the swap - waiting for the next unrelated
+        // relayout left "the last workspace is always empty" broken.
+        compactWorkspaces()
+        reflow()
+        emitWorkspacesChanged()
+        print("move-workspace-\(delta < 0 ? "up" : "down") -> now workspace \(activeWorkspaceIndex + 1)")
     }
 
     // niri's set-column-width "±10%": adjusts the focused column's own width
@@ -754,70 +738,175 @@ extension TilingEngine {
         // bump is what hides it.
         let knownFloor = knownFloor ?? column.validMinWidth
         ColumnLayoutEngine.newEpoch()
-        let usableWidth = usableScreen().usableWidth
-        // Both directions through LayoutEngine's pair, which is what its own
-        // comment promises ("Every conversion goes through these") and what
-        // this function was the last holdout from.
-        func proportion(forPixels px: CGFloat) -> CGFloat {
-            ColumnLayoutEngine.proportion(forWidth: px, usableWidth: usableWidth)
-        }
-        let currentPixels = ColumnLayoutEngine.width(
-            forProportion: column.widthProportion, usableWidth: usableWidth)
-        let target: CGFloat
-        switch change {
-        case .setProportion(let p): target = p / 100
-        case .adjustProportion(let d): target = column.widthProportion + d / 100
-        case .setFixed(let px): target = proportion(forPixels: px)
-        case .adjustFixed(let px): target = proportion(forPixels: currentPixels + px)
-        }
-        column.widthProportion = clampedProportion(target, for: column, knownFloor: knownFloor)
-        column.presetWidthIndex = nil
+        let applied = applyColumnWidth(change, to: column, knownFloor: knownFloor)
         reflow()
-        print("set-column-width \(change) -> \(String(format: "%.0f%%", column.widthProportion * 100))")
+        print("set-column-width \(change) -> \(applied)")
     }
 
-    // niri's set-window-height "±10%": adjusts the focused window's manual
-    // height by 10 percentage points of the column's total usable height,
-    // seeding it from the window's current actual height the first time
-    // (niri's WindowHeight::Auto -> Fixed conversion happens the same way -
-    // "weighted to preserve their visual heights at the moment of the
-    // conversion").
-    func setWindowHeight(_ change: SizeChange) {
-        guard let column = focusedColumn(), let window = focusedStackWindow() else { return }
-        let columnHeight = usableScreen().frame.height - 2 * ColumnLayoutEngine.gap
+    // niri's Column::set_column_width, match arm for match arm
+    // (scrolling.rs:4851-4909): the SET forms pick their own kind, the
+    // ADJUST forms keep pixels fixed and convert a fixed width to a
+    // proportion before adjusting proportionally. Clears the preset index
+    // and is_full_width, exactly like upstream (4906-4908) - resizing a
+    // maximized column used to visibly do nothing, since the maximize
+    // override kept winning.
+    @discardableResult
+    func applyColumnWidth(_ change: SizeChange, to column: Column, knownFloor: CGFloat? = nil) -> ColumnWidth
+    {
+        let usableWidth = usableScreen().usableWidth
+        // Full-width reads as proportion 1 (scrolling.rs:4852-4856).
+        let current: ColumnWidth = column.isFullWidth ? .proportion(1) : column.width
+        let currentPx = ColumnLayoutEngine.resolveColumnWidth(current, usableWidth: usableWidth)
+        // Upstream's overflow guards (FIXME there: "fix overflows then
+        // remove limits").
+        let maxPx: CGFloat = 100000
+        let maxProp: CGFloat = 10000
+        var width: ColumnWidth
+        switch (current, change) {
+        case (_, .setFixed(let px)):
+            // Upstream computes the FIXED width so the window itself gets
+            // the asked-for pixels (tile_width_for_window_width) - the tile
+            // and the window are the same rectangle here (decorations are
+            // overlays), so that conversion is the identity.
+            width = .fixed(min(max(px, 1), maxPx))
+        case (_, .setProportion(let p)):
+            width = .proportion(min(max(p / 100, 0), maxProp))
+        case (_, .adjustFixed(let d)):
+            width = .fixed(min(max(currentPx + d, 1), maxPx))
+        case (.proportion(let cur), .adjustProportion(let d)):
+            width = .proportion(min(max(cur + d / 100, 0), maxProp))
+        case (.fixed, .adjustProportion(let d)):
+            let cur = ColumnLayoutEngine.proportion(forWidth: currentPx, usableWidth: usableWidth)
+            width = .proportion(min(max(cur + d / 100, 0), maxProp))
+        }
+        // macOS deviation, same one clampedProportion documents: the model
+        // never keeps a width the column's windows have refused.
+        width = clampedWidth(width, for: column, knownFloor: knownFloor)
+        column.width = width
+        column.presetWidthIndex = nil
+        column.isFullWidth = false
+        return width
+    }
+
+    // niri's SetWindowWidth (scrolling.rs:2607), the window-addressed
+    // spelling: a tiled window's width IS its column's, and a floating
+    // target resizes the window itself - with an optional id, wherever the
+    // window lives, without moving focus.
+    func setWindowWidth(_ change: SizeChange, id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "set-window-width") else { return }
+        switch t.location {
+        case .floating:
+            resizeFloatingWindow(width: change, of: t.window)
+        case .tiled(let wi, let ci, _):
+            let column = workspaces[wi].columns[ci]
+            let knownFloor = column.validMinWidth
+            ColumnLayoutEngine.newEpoch()
+            let applied = applyColumnWidth(change, to: column, knownFloor: knownFloor)
+            reflow()
+            print("set-window-width \(change) -> \(applied)")
+        }
+    }
+
+    // The ColumnWidth face of clampedProportion below: both kinds clamp
+    // against the same discovered floor and rule ceiling.
+    func clampedWidth(_ width: ColumnWidth, for column: Column, knownFloor: CGFloat? = nil) -> ColumnWidth {
+        switch width {
+        case .proportion(let p):
+            return .proportion(clampedProportion(p, for: column, knownFloor: knownFloor))
+        case .fixed(let px):
+            let minWidth = knownFloor ?? column.validMinWidth
+            var v = px
+            if let mx = column.maxWidthPx { v = min(v, mx) }
+            if let minWidth, minWidth > v {
+                v = minWidth
+                // Said out loud, like the proportion path: a silent floor is
+                // undiagnosable from the outside.
+                print(
+                    "[layout] \(Int(px))px asked for, but the app won't go below \(Int(minWidth))px - re-measuring"
+                )
+            }
+            return .fixed(v)
+        }
+    }
+
+    // niri's set_window_height, formula for formula (scrolling.rs:
+    // 4917-4991), with extra_size 0 (decorations are overlays here, so
+    // tile height == window height). The old version had its own math
+    // (SetProportion as a share of columnHeight, invented 20px floors and
+    // per-sibling 20px ceilings) and let several windows hold a manual
+    // height at once, against upstream's documented invariant.
+    func setWindowHeight(_ change: SizeChange, id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "set-window-height") else { return }
+        // A floating target takes the floating path, exactly upstream's
+        // routing (layout/mod.rs set_window_height -> workspace -> floating).
+        if case .floating = t.location {
+            resizeFloatingWindow(height: change, of: t.window)
+            return
+        }
+        guard case .tiled(let wi, let ci, let row) = t.location else { return }
+        let column = workspaces[wi].columns[ci]
+        let window = t.window
+        let working = usableScreen().frame.height
+        let gap = ColumnLayoutEngine.gap
+        // height(forProportion:) references usable = working - 2*gap; with
+        // that, (usable + gap)*p - gap == (working - gap)*p - gap, which IS
+        // upstream's tile height for SetProportion.
+        let columnHeight = working - 2 * gap
+        // "Every window but one in a column must be Auto" (scrolling.rs:
+        // 244-247): resizing an Auto window first converts every height to
+        // Auto, preserving apparent heights; a window already Fixed skips
+        // the conversion, which also restores the old weights when a resize
+        // bottomed out its siblings and came back.
+        if window.manualHeightPx == nil { convertHeightsToAuto(column) }
         let current =
             window.manualHeightPx ?? (WindowMover.currentFrame(window.axElement)?.height ?? columnHeight)
+        let full = working - gap
+        let currentProp = full == 0 ? 1 : (current + gap) / full
         let requested: CGFloat
         switch change {
-        case .setProportion(let p): requested = columnHeight * p / 100
-        case .adjustProportion(let d): requested = current + columnHeight * d / 100
         case .setFixed(let px): requested = px
+        case .setProportion(let p):
+            requested = ColumnLayoutEngine.height(forProportion: p / 100, usableHeight: columnHeight)
         case .adjustFixed(let px): requested = current + px
+        case .adjustProportion(let d):
+            requested = ColumnLayoutEngine.height(
+                forProportion: currentProp + d / 100, usableHeight: columnHeight)
         }
-        // Ceiling: the column's height minus each sibling's gap and the same
-        // 20px floor the manual height itself gets - vertical space is
-        // genuinely fixed (no scrolling), so growth past what the stack can
-        // hold was the vertical mirror of the column-width debt: invisible
-        // overshoot that shrink presses had to pay back.
-        let siblingCount = CGFloat(column.windows.count - 1)
-        let ceiling = max(20, columnHeight - siblingCount * (ColumnLayoutEngine.gap + 20))
-        window.manualHeightPx = min(ceiling, max(20, requested))
+        // Ceiling from the siblings' minimums (scrolling.rs:4961-4974): an
+        // unknown minimum counts as 1, exactly upstream's max(1., min_size);
+        // AX only reveals a real minimum once a window refuses (fixedSize),
+        // and the probe pass absorbs those refusals at apply time. Tabbed
+        // columns take no vertical space from each other. (The audit's LAY-2
+        // rewrite supersedes the older 20px-floor ceiling and the flat
+        // sibling reset - convertHeightsToAuto above keeps their weights.)
+        let minTaken: CGFloat =
+            column.isTabbed
+            ? 0
+            : column.windows.enumerated()
+                .filter { $0.offset != row }
+                .reduce(0) { $0 + max(1, $1.element.fixedSize?.height ?? 1) + gap }
+        let heightLeft = max(1, working - gap - minTaken - gap)
+        window.setFixedHeight(min(100000, max(1, min(heightLeft, requested))))
         column.cachedHeights = nil
         reflow()
-        print("set-window-height \(change) -> \(describeFocus())")
+        print("set-window-height \(change) -> \(window.title)")
     }
 
     // niri's reset-window-height: back to Auto, splitting whatever's left
     // among the column's other Auto windows again.
-    func resetWindowHeight() {
-        guard let column = focusedColumn(), let window = focusedStackWindow() else { return }
+    func resetWindowHeight(id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "reset-window-height") else { return }
+        guard case .tiled(let wi, let ci, _) = t.location else { return }
+        let column = workspaces[wi].columns[ci]
+        let window = t.window
         window.manualHeightPx = nil
+        window.presetHeightIndex = nil
         // Back to an equal Auto share: a weight frozen by an earlier
-        // consume/expel would otherwise keep the window disproportionate.
+        // resize would otherwise keep the window disproportionate.
         window.heightWeight = 1
         column.cachedHeights = nil
         reflow()
-        print("reset-window-height -> \(describeFocus())")
+        print("reset-window-height -> \(window.title)")
     }
 
     // niri's expand-column-to-available-width: grows the focused column to
@@ -827,27 +916,46 @@ extension TilingEngine {
     func expandColumnToAvailableWidth() {
         ColumnLayoutEngine.newEpoch()
         guard focusedColumn() != nil else { return }
+        // Already full-width: a no-op, like upstream's is_full_width guard
+        // (scrolling.rs:2733-2735).
+        guard focusedColumn()?.isFullWidth != true else { return }
+        // Always-centered mode cannot control the active window's position,
+        // so upstream just toggles full width (scrolling.rs:2737-2747).
+        if ColumnLayoutEngine.centerPolicy == .always
+            || (ColumnLayoutEngine.alwaysCenterSingleColumn && workspace.columns.count == 1)
+        {
+            maximizeColumnToggle()
+            return
+        }
         let usableWidth = usableScreen().usableWidth
         let placements = ColumnLayoutEngine.columnPlacements(
-            columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
+            columns: workspace.columns, usableWidth: usableWidth)
         let activeIndex = workspace.focusedIndex
 
+        func fullyVisible(_ p: ColumnLayoutEngine.Placement) -> Bool {
+            p.x >= workspace.viewOffset - 0.5
+                && (p.x + p.width) <= workspace.viewOffset + usableWidth + 0.5
+        }
+        // The active column must itself be fully on screen, or there is
+        // nothing meaningful to expand into (scrolling.rs:2788-2791).
+        guard placements.indices.contains(activeIndex), fullyVisible(placements[activeIndex]) else {
+            return
+        }
         var otherVisibleWidth: CGFloat = 0
         var anyOtherVisible = false
-        for (idx, p) in placements.enumerated() where idx != activeIndex {
-            let visible =
-                p.x >= workspace.viewOffset - 0.5
-                && (p.x + p.width) <= workspace.viewOffset + usableWidth + 0.5
-            if visible {
+        var leftmostVisibleX: CGFloat?
+        for (idx, p) in placements.enumerated() where fullyVisible(p) {
+            if leftmostVisibleX == nil || p.x < leftmostVisibleX! { leftmostVisibleX = p.x }
+            if idx != activeIndex {
                 otherVisibleWidth += p.width + ColumnLayoutEngine.gap
                 anyOtherVisible = true
             }
         }
         guard anyOtherVisible else {
-            workspace.columns[activeIndex].widthProportion = 1.0
-            workspace.columns[activeIndex].presetWidthIndex = nil
-            reflow()
-            print("expand-column-to-available-width -> 100% (only column in view)")
+            // Only the active column is fully on-screen: upstream goes
+            // through toggle_full_width so backing out is intuitive
+            // (scrolling.rs:2803-2808) - a raw 100% width undid differently.
+            maximizeColumnToggle()
             return
         }
         // What is left once the other fully-visible columns have taken
@@ -856,23 +964,36 @@ extension TilingEngine {
         // the very columns this measured out of view.
         let newWidth = usableWidth - otherVisibleWidth
         guard newWidth > 0 else { return }
-        workspace.columns[activeIndex].widthProportion =
-            ColumnLayoutEngine.proportion(forWidth: newWidth, usableWidth: usableWidth)
+        // Stored as FIXED pixels, like upstream (scrolling.rs:2812-2814):
+        // the expanded width is an absolute answer to "what space is left",
+        // not a share to re-derive when gaps or the monitor change.
+        workspace.columns[activeIndex].width = .fixed(newWidth)
         workspace.columns[activeIndex].presetWidthIndex = nil
-        reflow()
-        print(
-            "expand-column-to-available-width -> \(String(format: "%.0f%%", workspace.columns[activeIndex].widthProportion * 100))"
-        )
+        workspace.columns[activeIndex].isFullWidth = false
+        // Keep the leftmost visible column in view (scrolling.rs:2817-2819):
+        // the expansion grows rightward from it, never shoves it off.
+        if let leftmostVisibleX {
+            reflow(explicitViewOffset: leftmostVisibleX)
+        } else {
+            reflow()
+        }
+        print("expand-column-to-available-width -> \(Int(newWidth))px")
     }
 
     // niri's center-column: an explicit, on-demand recentering of the
     // focused column - distinct from center-focused-column "never" (the
     // passive auto-follow policy every other action already respects).
     func centerColumn() {
+        // niri's center_column with the floating layer active centers the
+        // floating window (workspace.rs:1152-1160); it was a no-op here.
+        if workspace.isFloatingActive {
+            centerFloatingWindow()
+            return
+        }
         guard focusedColumn() != nil else { return }
         let usableWidth = usableScreen().usableWidth
         let placements = ColumnLayoutEngine.columnPlacements(
-            columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
+            columns: workspace.columns, usableWidth: usableWidth)
         let p = placements[workspace.focusedIndex]
         reflow(explicitViewOffset: p.x + p.width / 2 - usableWidth / 2)
         print("center-column")
@@ -883,13 +1004,25 @@ extension TilingEngine {
     // sitting flush against whichever edge they happened to scroll to.
     func centerVisibleColumns() {
         guard !workspace.isFloatingActive, !workspace.columns.isEmpty else { return }
+        // Upstream's guards (scrolling.rs:2241-2243, 2278-2281): a no-op in
+        // always-centered mode, and a no-op when the active column is not
+        // itself fully visible.
+        if ColumnLayoutEngine.centerPolicy == .always
+            || (ColumnLayoutEngine.alwaysCenterSingleColumn && workspace.columns.count == 1)
+        {
+            return
+        }
         let usableWidth = usableScreen().usableWidth
         let placements = ColumnLayoutEngine.columnPlacements(
-            columns: workspace.columns, usableWidth: usableWidth, maximizedIndex: workspace.maximizedIndex)
-        let visible = placements.filter {
-            $0.x >= workspace.viewOffset - 0.5
-                && ($0.x + $0.width) <= workspace.viewOffset + usableWidth + 0.5
+            columns: workspace.columns, usableWidth: usableWidth)
+        func fullyVisible(_ p: ColumnLayoutEngine.Placement) -> Bool {
+            p.x >= workspace.viewOffset - 0.5
+                && (p.x + p.width) <= workspace.viewOffset + usableWidth + 0.5
         }
+        guard placements.indices.contains(workspace.focusedIndex),
+            fullyVisible(placements[workspace.focusedIndex])
+        else { return }
+        let visible = placements.filter(fullyVisible)
         guard let first = visible.first, let last = visible.last else { return }
         let visibleSpan = (last.x + last.width) - first.x
         let slack = usableWidth - visibleSpan
@@ -903,46 +1036,60 @@ extension TilingEngine {
     // EXCLUDED from ColumnLayoutEngine entirely - real mouse dragging/
     // resizing still works completely normally on it afterward, same as any
     // other macOS window, since nothing here ever overrides its frame again.
-    func toggleWindowFloating() {
-        if workspace.isFloatingActive {
-            guard workspace.floatingWindows.indices.contains(workspace.floatingFocusedIndex) else {
-                print("toggle-window-floating: no focused floating window")
-                return
-            }
+    func toggleWindowFloating(id: UInt64? = nil) {
+        guard let t = windowTarget(id: id, action: "toggle-window-floating") else { return }
+        let ws = workspaces[t.workspaceIndex]
+        let follow = targetIsFocused(t)
+        if case .floating(_, let fi) = t.location {
             // niri's toggle_window_floating moves ANY window either way
             // (workspace.rs) - the dialog veto here was invented policy. A
             // dialog that cannot resize is no longer a fight: the layout
             // clamps its column to the fixed size (see ManagedWindow
             // .fixedSize), exactly like niri bending to the client.
-            let window = workspace.floatingWindows.remove(at: workspace.floatingFocusedIndex)
-            workspace.focus(floating: workspace.floatingFocusedIndex)
+            let window = ws.floatingWindows.remove(at: fi)
+            // niri remembers the float position across the round-trip
+            // (floating.rs, stored_or_default_tile_pos).
+            window.lastFloatingFrame = WindowMover.currentFrame(window.axElement)
+            // Re-clamp whichever floating slot was focused now that one left.
+            ws.focus(
+                floating: ws.floatingFocusedIndex > fi ? ws.floatingFocusedIndex - 1 : ws.floatingFocusedIndex
+            )
             let newColumn = Column()
             newColumn.setWindows([window])
+            // niri tiles a floating window at its CURRENT width
+            // (ColumnWidth::Fixed(tile width), floating.rs:536 via
+            // workspace.rs:1403-1410), not at default-column-width.
+            if let width = window.lastFloatingFrame?.width {
+                newColumn.width = .fixed(min(max(width, 1), 100000))
+            }
             let insertAt =
-                workspace.columns.isEmpty ? 0 : min(workspace.focusedIndex + 1, workspace.columns.count)
-            workspace.insertColumn(newColumn, at: insertAt)
-            workspace.focus(column: insertAt)
-            // Unconditionally: the window that just got tiled is the one the
-            // user is acting on, so focus has to follow it into the columns.
-            // Clearing this only when the floating layer emptied left focus
-            // reading through isFloatingActive at some OTHER floating window,
-            // so the freshly-tiled one got neither focus nor the ring.
-            workspace.isFloatingActive = false
+                ws.columns.isEmpty ? 0 : min(ws.focusedIndex + 1, ws.columns.count)
+            ws.insertColumn(newColumn, at: insertAt)
+            if follow {
+                ws.focus(column: insertAt)
+                // Unconditionally on the followed path: the window that just
+                // got tiled is the one the user is acting on, so focus has to
+                // follow it into the columns. Clearing this only when the
+                // floating layer emptied left focus reading through
+                // isFloatingActive at some OTHER floating window, so the
+                // freshly-tiled one got neither focus nor the ring.
+                ws.isFloatingActive = false
+            }
             reflow()
-            focusCurrentColumn()
-            print("toggle-window-floating -> tiled, column \(workspace.focusedIndex)")
+            if follow { focusCurrentColumn() }
+            print("toggle-window-floating -> tiled, column \(insertAt)")
         } else {
-            guard workspace.columns.indices.contains(workspace.focusedIndex) else { return }
-            let column = workspace.columns[workspace.focusedIndex]
-            guard column.windows.indices.contains(column.focusedWindowIndex) else { return }
-            let window = column.windows[column.focusedWindowIndex]
+            guard case .tiled = t.location else { return }
+            let window = t.window
             // One operation, with the fullscreen invariant inside it.
-            workspace.detachFromTiling(window)
-            // Default floating position: current tiled frame + (50,50),
-            // clamped to stay on screen - matches niri's own default offset
-            // (center-focused-column "never" always uses +50,+50, never the
-            // (0,0) alternative reserved for "always" mode).
-            if let currentFrame = WindowMover.currentFrame(window.axElement) {
+            ws.detachFromTiling(window)
+            // niri's stored_or_default_tile_pos (floating.rs): a window
+            // that floated before goes back exactly there; only a first
+            // float gets the default current frame + (50,50), clamped on
+            // screen.
+            if let stored = window.lastFloatingFrame {
+                _ = ColumnLayoutEngine.applyFrame(window, target: stored)
+            } else if let currentFrame = WindowMover.currentFrame(window.axElement) {
                 let screenFrame = currentRawScreenFrame()
                 var newOrigin = CGPoint(x: currentFrame.origin.x + 50, y: currentFrame.origin.y + 50)
                 newOrigin.x = min(newOrigin.x, screenFrame.maxX - currentFrame.width)
@@ -950,11 +1097,13 @@ extension TilingEngine {
                 try? WindowMover.setFrame(
                     window.axElement, to: CGRect(origin: newOrigin, size: currentFrame.size))
             }
-            workspace.floatingWindows.append(window)
-            workspace.focus(floating: workspace.floatingWindows.count - 1)
-            workspace.isFloatingActive = true
+            ws.floatingWindows.append(window)
+            if follow {
+                ws.focus(floating: ws.floatingWindows.count - 1)
+                ws.isFloatingActive = true
+            }
             reflow()
-            focusCurrentColumn()
+            if follow { focusCurrentColumn() }
             print("toggle-window-floating -> floating")
         }
     }

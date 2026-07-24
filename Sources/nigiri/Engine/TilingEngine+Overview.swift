@@ -55,7 +55,7 @@ extension TilingEngine {
         refreshDesktopBackdrop()
         startOverviewCaptureLoop()
         presentOverviewPanel(select: focusedManagedWindow())
-        msgServer.broadcast("{\"event\":\"overview\",\"active\":true}")
+        msgServer.broadcastLegacy("{\"event\":\"overview\",\"active\":true}")
         emitOverviewChanged(true)
         print(
             "overview: panel on (\(overviewRowRanges.count) workspace(s), \(overviewSelection.count) window(s))"
@@ -80,7 +80,6 @@ extension TilingEngine {
             let ws = workspaces[row.wsIndex]
             var frames = ColumnLayoutEngine.overviewFrames(
                 columns: ws.columns, in: screenFrame,
-                maximizedIndex: ws.maximizedIndex,
                 viewOffset: ws.viewOffset)
             for fw in ws.floatingWindows {
                 // fullscreenHome before the live frame: during a fullscreen
@@ -350,6 +349,8 @@ extension TilingEngine {
     }
 
     func enterOverview() {
+        overviewScrollTravelY = 0
+        overviewWheelTicks = 0
         guard !isOverviewActive else { return }
         guard !isTransitioningWorkspace else {
             print("overview: ignored, a workspace switch is in progress")
@@ -411,7 +412,7 @@ extension TilingEngine {
         }
         overviewChrome.show(rows: chips)
         animateFrames(targets, trackRing: false) { _ in }
-        msgServer.broadcast("{\"event\":\"overview\",\"active\":true}")
+        msgServer.broadcastLegacy("{\"event\":\"overview\",\"active\":true}")
         emitOverviewChanged(true)
         print("overview: on (\(rows.count) workspace(s))")
     }
@@ -516,7 +517,7 @@ extension TilingEngine {
                 relayoutQueuedDuringTransition = false
                 scheduleRelayout()
             }
-            msgServer.broadcast("{\"event\":\"overview\",\"active\":false}")
+            msgServer.broadcastLegacy("{\"event\":\"overview\",\"active\":false}")
             emitOverviewChanged(false)
             print("overview: panel off -> workspace \(activeWorkspaceIndex + 1)")
             return
@@ -538,7 +539,7 @@ extension TilingEngine {
                 self.scheduleRelayout()
             }
         }
-        msgServer.broadcast("{\"event\":\"overview\",\"active\":false}")
+        msgServer.broadcastLegacy("{\"event\":\"overview\",\"active\":false}")
         emitOverviewChanged(false)
         print("overview: off -> workspace \(activeWorkspaceIndex + 1)")
     }
@@ -551,7 +552,6 @@ extension TilingEngine {
         let screenFrame = usableScreen().frame
         var targets = ColumnLayoutEngine.targetFrames(
             columns: workspace.columns, in: screenFrame,
-            maximizedIndex: workspace.maximizedIndex,
             viewOffset: workspace.viewOffset)
         // The stash is cleared in the completion, and only if the animation
         // was NOT superseded: clearing it here left a floating window
@@ -614,8 +614,24 @@ extension TilingEngine {
         case "focus-window-down": overviewNavigate(.down); return true
         case "focus-column-first": overviewSelectRowEdge(first: true); return true
         case "focus-column-last": overviewSelectRowEdge(first: false); return true
-        case "focus-workspace-up", "focus-workspace-previous": overviewJumpRow(-1); return true
+        case "focus-workspace-up": overviewJumpRow(-1); return true
         case "focus-workspace-down": overviewJumpRow(1); return true
+        // niri's back-and-forth by ID (monitor.rs:1027-1031) - treating it
+        // as "row up" was invented.
+        case "focus-workspace-previous":
+            overviewSelectWorkspaceRow(previousWorkspaceIndex)
+            return true
+        // Focusing a workspace with the overview open moves the camera and
+        // stays open, like niri; it used to collapse the overview.
+        case "focus-workspace":
+            if let n = parts.dropFirst().first.flatMap({ Int($0) }) {
+                overviewSelectWorkspaceRow(n - 1)
+            } else if let name = parts.dropFirst().first.map(String.init),
+                let idx = workspaceIndex(named: name)
+            {
+                overviewSelectWorkspaceRow(idx)
+            }
+            return true
         // ---- keyboard moves: reorder the model, rebuild the panel ----
         case "move-column-left": overviewMoveColumn(-1); return true
         case "move-column-right": overviewMoveColumn(1); return true
@@ -712,15 +728,8 @@ extension TilingEngine {
         // Same rule as relayout's purge: every workspace re-anchors its
         // indices after windows disappear.
         for ws in workspaces { ws.clampFocus() }
-        // A fullscreen window that died must not keep the workspace shoved
-        // aside (relayout does this too, but the overview purges on its own).
-        for ws in workspaces {
-            if let full = ws.fullscreenWindow,
-                !ws.allWindows.contains(where: { $0 === full })
-            {
-                ws.fullscreenWindow = nil
-            }
-        }
+        // A dead fullscreen window cannot dangle: the state is derived from
+        // the column flags and dies with the emptied column.
         applyOverviewRearrangement()
         if occupiedWorkspaceRows().isEmpty { exitOverview(); return }
         presentOverviewPanel(select: sel.flatMap { windowIsAlive($0) ? $0 : nil })
@@ -760,8 +769,7 @@ extension TilingEngine {
         let usableWidth = screenFrame.width - 2 * ColumnLayoutEngine.gap
         let placements = ColumnLayoutEngine.columnPlacements(
             columns: ws.columns,
-            usableWidth: usableWidth,
-            maximizedIndex: ws.maximizedIndex)
+            usableWidth: usableWidth)
         let offset = ColumnLayoutEngine.scrollOffset(
             toShow: columnIndex, placements: placements,
             currentOffset: ws.viewOffset,
@@ -824,20 +832,57 @@ extension TilingEngine {
         }?.wsIndex
     }
 
-    // niri's FocusWorkspaceUp/DownUnderMouse: a real mouse wheel's
-    // unmodified notches in the overview switch the focused workspace
-    // (input/mod.rs:3206); only the trackpad's continuous scroll pans.
+    // niri's FocusWorkspaceUp/DownUnderMouse (input/mod.rs:3205-3231): the
+    // wheel switches relative to the workspace UNDER THE CURSOR, not
+    // relative to the selection - the selection-relative jump was invented.
+    // (The v120 tick accumulator and 50ms cooldown remain audit ANI-10.)
     @discardableResult
-    func overviewWheelWorkspaceSwitch(dy: CGFloat) -> Bool {
+    func overviewWheelWorkspaceSwitch(dy: CGFloat, at point: CGPoint) -> Bool {
         guard isOverviewActive, overviewUsedPanel, dy != 0 else { return false }
-        overviewJumpRow(dy > 0 ? -1 : 1)
+        // niri accumulates the wheel's v120 ticks into whole notches and
+        // rate-limits the switches at 50ms per bind cooldown
+        // (input/mod.rs:3204-3231): a fast flick is a few deliberate steps,
+        // not one jump per raw event; a rate-limited tick is consumed, like
+        // a bind firing inside its cooldown.
+        overviewWheelTicks += dy
+        while abs(overviewWheelTicks) >= 1 {
+            let step: CGFloat = overviewWheelTicks > 0 ? 1 : -1
+            overviewWheelTicks -= step
+            guard Date().timeIntervalSince(overviewWheelLastFire) >= 0.05 else { continue }
+            let anchorRow =
+                overviewRowBands.firstIndex { $0.band.contains(point) }
+                ?? overviewRowBands.indices.min {
+                    abs(overviewRowBands[$0].band.midY - point.y)
+                        < abs(overviewRowBands[$1].band.midY - point.y)
+                }
+            guard let anchorRow else { break }
+            let targetRow = anchorRow + (step > 0 ? -1 : 1)
+            // At the stack's edge the event is still ours - consumed, no jump.
+            guard overviewRowBands.indices.contains(targetRow) else { continue }
+            overviewWheelLastFire = Date()
+            overviewSelectWorkspaceRow(overviewRowBands[targetRow].wsIndex)
+        }
         return true
     }
 
     @discardableResult
     func overviewPan(dx: CGFloat, dy: CGFloat, at point: CGPoint) -> Bool {
         guard isOverviewActive, overviewUsedPanel else { return false }
-        let travel = dx != 0 ? dx : dy
+        // niri: continuous VERTICAL scroll is the workspace-stack gesture,
+        // 300px of travel per workspace (WORKSPACE_GESTURE_MOVEMENT,
+        // monitor.rs:36); mapping it onto the row's horizontal pan was
+        // invented. The panel has no continuous vertical camera, so the
+        // travel quantizes into row switches at the same rate.
+        if dy != 0, dx == 0 {
+            overviewScrollTravelY += dy
+            let step: CGFloat = 300
+            while abs(overviewScrollTravelY) >= step {
+                overviewWheelWorkspaceSwitch(dy: overviewScrollTravelY > 0 ? 1 : -1, at: point)
+                overviewScrollTravelY += overviewScrollTravelY > 0 ? -step : step
+            }
+            return true
+        }
+        let travel = dx
         guard travel != 0 else { return false }
         let zoom = min(0.75, max(0.0001, OverviewPanel.zoom))
         let rowIndex =
@@ -853,8 +898,7 @@ extension TilingEngine {
         // space forever: half a screen past either end is as far as it goes.
         let placements = ColumnLayoutEngine.columnPlacements(
             columns: ws.columns,
-            usableWidth: usableWidth,
-            maximizedIndex: ws.maximizedIndex)
+            usableWidth: usableWidth)
         let stripEnd = placements.map { $0.x + $0.width }.max() ?? usableWidth
         let before = ws.viewOffset
         let wanted = before - travel / zoom
@@ -948,7 +992,6 @@ extension TilingEngine {
         }
         for (w, frame) in ColumnLayoutEngine.targetFrames(
             columns: workspace.columns, in: screenFrame,
-            maximizedIndex: workspace.maximizedIndex,
             viewOffset: workspace.viewOffset)
         {
             _ = ColumnLayoutEngine.applyFrame(w, target: frame)
@@ -1053,6 +1096,24 @@ extension TilingEngine {
         let target = first ? range.lowerBound : range.upperBound - 1
         overviewSelectedIndex = target
         overviewPanel.setSelectedIndex(target)
+        overviewFollowCamera()
+        raiseOverviewSelection()
+    }
+
+    // Select the row showing this WORKSPACE, landing on the entry nearest
+    // in x to the current selection. The absolute form of overviewJumpRow -
+    // what focus-workspace-previous (back-and-forth by id, monitor.rs:
+    // 1027-1031) and the under-cursor wheel need.
+    func overviewSelectWorkspaceRow(_ wsIndex: Int) {
+        guard let targetRow = overviewRowBands.firstIndex(where: { $0.wsIndex == wsIndex }),
+            overviewRowRanges.indices.contains(targetRow),
+            overviewBoxes.indices.contains(overviewSelectedIndex)
+        else { return }
+        let curX = overviewBoxes[overviewSelectedIndex].midX
+        let target = overviewRowRanges[targetRow].min {
+            abs(overviewBoxes[$0].midX - curX) < abs(overviewBoxes[$1].midX - curX)
+        }
+        if let target { overviewSelectedIndex = target; overviewPanel.setSelectedIndex(target) }
         overviewFollowCamera()
         raiseOverviewSelection()
     }
@@ -1234,8 +1295,17 @@ extension TilingEngine {
         // new column is what anyone would expect - measured a horizontal
         // distance of 0 against the last column and stacked into it instead.
         // insertPosition, the tiled twin of this contest, has both bounds.
+        // niri's insert hint is a FILLED slab, not a thin bar
+        // (scrolling.rs:2436-2516): 300px wide for a new column, 150px tall
+        // for an in-column slot - scaled by the overview zoom here, since
+        // the rows are drawn zoomed out.
+        let zoom = min(0.75, max(0.0001, OverviewPanel.zoom))
+        let slabWidth = 300 * zoom
+        let bandHeight = 150 * zoom
         guard let colIdx = TilingEngine.hoveredColumn(colBox, x: point.x) else {
-            let hint = CGRect(x: colGapX.last! - 7, y: rowMinY, width: 14, height: rowMaxY - rowMinY)
+            let hint = CGRect(
+                x: colGapX.last! - slabWidth / 2, y: rowMinY,
+                width: slabWidth, height: rowMaxY - rowMinY)
             let anchor = overviewSelection[cols[cols.count - 1][0]].window
             return (.newColumn(anchor: anchor, after: true), hint)
         }
@@ -1248,22 +1318,21 @@ extension TilingEngine {
         })!
         let horDist = abs(tileY - point.y)
 
-        // Slim insertion bars: full-length along the gap so you see WHERE,
-        // thin across so they don't swamp the thumbnails.
-        let thickness: CGFloat = 14
         if vertDist <= horDist {
-            // New column: a tall thin bar at the column gap, full row height.
+            // New column: niri's 300px slab at the column gap, full row
+            // height.
             let hint = CGRect(
-                x: gapX - thickness / 2, y: rowMinY, width: thickness, height: rowMaxY - rowMinY)
+                x: gapX - slabWidth / 2, y: rowMinY, width: slabWidth, height: rowMaxY - rowMinY)
             let anchor =
                 gapIdx < cols.count
                 ? overviewSelection[cols[gapIdx][0]].window
                 : overviewSelection[cols[cols.count - 1][0]].window
             return (.newColumn(anchor: anchor, after: gapIdx >= cols.count), hint)
         } else {
-            // Stack: a wide thin bar across the column at the tile gap.
+            // Stack: niri's 150px band across the column at the tile gap.
             let cb = colBox[colIdx]
-            let hint = CGRect(x: cb.minX, y: tileY - thickness / 2, width: cb.width, height: thickness)
+            let hint = CGRect(
+                x: cb.minX, y: tileY - bandHeight / 2, width: cb.width, height: bandHeight)
             let anchor =
                 tileIdx == 0
                 ? overviewSelection[cols[colIdx][0]].window
@@ -1315,6 +1384,9 @@ extension TilingEngine {
             guard let a = overviewLocateWindow(anchor) else { presentOverviewPanel(select: dragged); return }
             let newCol = Column()
             newCol.setWindows([dragged])
+            // A drag is a move, not a resize: the new column inherits the
+            // source's width, same as the in-workspace drop (DragDrop).
+            newCol.width = fromCol.width
             newCol.focus(row: 0)
             let idx = min(max(0, a.colIndex + (after ? 1 : 0)), workspaces[a.wsIndex].columns.count)
             workspaces[a.wsIndex].insertColumn(newCol, at: idx)

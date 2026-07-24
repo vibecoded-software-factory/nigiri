@@ -1,14 +1,15 @@
 import Foundation
 
-// Three-finger trackpad swipes via Apple's private MultitouchSupport
+// Continuous trackpad gestures via Apple's private MultitouchSupport
 // framework - the same source Swish/BetterTouchTool read. NSEvent can't do
 // this: with the system three-finger gestures disabled (which is what frees
 // them for us), macOS emits no .swipe/.gesture events and global monitors
 // never see raw touches (verified empirically). MultitouchSupport delivers
-// the raw contact frames - finger count and per-finger position - so a
-// clean three-finger swipe is recognizable without colliding with
-// two-finger scroll. Loaded via dlopen so there's no link-time dependency
-// on a private framework.
+// the raw contact frames - finger count and per-finger position - which is
+// exactly what libinput hands niri: this layer emits begin/update(dx, dy)/
+// end just like GestureSwipeBegin/Update/End (input/mod.rs:3843-4010), and
+// the engine runs niri's own SwipeTracker state machines on top. Loaded via
+// dlopen so there's no link-time dependency on a private framework.
 
 // The MTTouch contact struct, laid out to match the framework's ABI (the
 // well-known reverse-engineered layout; only frame/timestamp/state and the
@@ -50,52 +51,71 @@ private typealias MTRegisterFn = @convention(c) (UnsafeMutableRawPointer?, MTCon
 private typealias MTStartFn = @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void
 private typealias MTStopFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
 
-enum SwipeDirection: Hashable { case left, right, up, down }
+// One frame of the continuous gesture stream, the shape of libinput's
+// swipe events: fingers at begin, per-frame deltas in 1000dpi-normalized
+// pixels (libinput's unaccelerated unit, which every niri gesture constant
+// is calibrated against), timestamps in seconds.
+enum SwipePhase {
+    case begin(fingers: Int)
+    case update(dx: CGFloat, dy: CGFloat, timestamp: TimeInterval)
+    case end
+}
 
-// The swipe state machine, owned by the multitouch thread. It lives OUTSIDE
-// the MainActor-isolated recognizer on purpose: mtCallback runs on
-// MultitouchSupport's own thread, so mutating the recognizer's stored
-// properties from there was a genuine data race - it only compiled because
-// the module is pinned to Swift 5 language mode. Here the state is
-// nonisolated and guarded by its own lock, and the ONLY thing that crosses
-// to the main actor is the recognized direction.
-private nonisolated final class SwipeRecognizer: @unchecked Sendable {
+// The per-device centroid differentiator, owned by the multitouch thread.
+// It lives OUTSIDE the MainActor-isolated recognizer on purpose: mtCallback
+// runs on MultitouchSupport's own thread, so mutating the recognizer's
+// stored properties from there was a genuine data race. State is guarded by
+// its own lock, and the only thing crossing to the main actor is the
+// emitted phase.
+private nonisolated final class ContinuousTracker: @unchecked Sendable {
     private let lock = NSLock()
     private var active = false
-    private var startX: Float = 0
-    private var startY: Float = 0
-    private var lastFireTime: Double = 0
+    private var fingers = 0
+    private var lastX: Float = 0
+    private var lastY: Float = 0
 
-    private let threshold: Float = 0.18
-    private let cooldown: Double = 0.4
+    // MT positions are normalized [0,1] over the pad surface; libinput
+    // reports gesture deltas normalized to 1000dpi. A built-in trackpad is
+    // roughly 160x100mm, so a full-width traversal is 160mm * 1000/25.4 -
+    // the macOS-forced conversion that keeps niri's constants (300px per
+    // workspace, 1200px per view width, 16px axis lock) meaning what they
+    // mean upstream.
+    static let padWidthPx: CGFloat = 160.0 * 1000.0 / 25.4
+    static let padHeightPx: CGFloat = 100.0 * 1000.0 / 25.4
 
-    func reset() {
+    // Feeds one contact frame; returns the phases to emit (a finger-count
+    // change ends the old gesture and may begin a new one in one frame).
+    func feed(fingers n: Int, centroidX cx: Float, centroidY cy: Float, now: Double) -> [SwipePhase] {
         lock.lock(); defer { lock.unlock() }
-        active = false
-    }
-
-    // Returns a direction only when this frame completes a swipe.
-    func feed(centroidX cx: Float, centroidY cy: Float, now: Double) -> SwipeDirection? {
-        lock.lock(); defer { lock.unlock() }
+        var out: [SwipePhase] = []
+        if active, n != fingers {
+            active = false
+            out.append(.end)
+        }
+        guard n == 3 || n == 4 else { return out }
         if !active {
             active = true
-            startX = cx; startY = cy
-            return nil
+            fingers = n
+            lastX = cx
+            lastY = cy
+            out.append(.begin(fingers: n))
+            return out
         }
-        let dx = cx - startX
-        let dy = cy - startY
-        guard now - lastFireTime > cooldown else { return nil }
-        var dir: SwipeDirection?
-        if abs(dx) > threshold, abs(dx) > abs(dy) {
-            dir = dx > 0 ? .right : .left
-        } else if abs(dy) > threshold, abs(dy) > abs(dx) {
-            // Trackpad Y grows upward; a downward finger motion is dy < 0.
-            dir = dy > 0 ? .up : .down
-        }
-        guard let dir else { return nil }
-        lastFireTime = now
-        startX = cx; startY = cy  // re-arm so a continued drag can repeat
-        return dir
+        let dx = CGFloat(cx - lastX) * Self.padWidthPx
+        // MT y grows UPWARD; libinput's grows downward. The engine's state
+        // machines are written against the MT sign (fingers up = dy > 0).
+        let dy = CGFloat(cy - lastY) * Self.padHeightPx
+        lastX = cx
+        lastY = cy
+        out.append(.update(dx: dx, dy: dy, timestamp: now))
+        return out
+    }
+
+    func reset() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let was = active
+        active = false
+        return was
     }
 }
 
@@ -104,12 +124,10 @@ final class TrackpadGestures {
     // live recognizer through this single shared instance.
     nonisolated(unsafe) static weak var shared: TrackpadGestures?
 
-    // Fired on the main thread with a recognized three-finger swipe.
-    // The finger count travels with the direction: three- and four-finger
-    // swipes are separate bindings.
-    // (direction, fingers, isMouse): a two-finger swipe on a Magic Mouse
-    // and a two-finger swipe on the trackpad are different gestures.
-    var onSwipe: ((SwipeDirection, Int, Bool) -> Void)?
+    // Fired on the main thread with each phase of a continuous 3- or
+    // 4-finger trackpad gesture. niri has no Magic Mouse gestures, so mouse
+    // devices are ignored (their 1-2 finger surface IS scrolling).
+    var onGesture: ((SwipePhase) -> Void)?
     // Read from the MT thread, so it is a Sendable box of its own.
     // One recognizer per device: a Magic Mouse and the trackpad deliver
     // frames independently, and a shared state machine let one device's
@@ -199,24 +217,17 @@ final class TrackpadGestures {
         print("[gestures] \(described.count) multitouch device(s): \(described.joined(separator: ", "))")
     }
 
-    // Called on the MT thread. Tracks the centroid of the touches while
-    // exactly three fingers are down and, on a dominant-axis move past the
-    // threshold, reports the swipe (once per gesture) on the main thread.
+    // Called on the MT thread. Differentiates the centroid of the touches
+    // while three or four fingers are down and streams the phases to the
+    // main thread, in order, exactly like libinput's swipe events.
     fileprivate nonisolated func handleFrame(slot device: Int32, _ raw: UnsafeRawPointer?, _ count: Int32) {
         let n = Int(count)
-        let isMouse = Self.isMouseFamily(Self.deviceFamilies[device] ?? 0)
-        // A Magic Mouse has room for one or two fingers, a trackpad is read
-        // at three or four (two is scroll there, one is the pointer).
-        let recognized = isMouse ? (n == 1 || n == 2) : (n == 3 || n == 4)
-        guard recognized, let raw else {
-            recognizers.reset(device)
+        // niri has no Magic Mouse gestures: a mouse's touch surface stays
+        // the system's (one finger IS scrolling there).
+        if Self.isMouseFamily(Self.deviceFamilies[device] ?? 0) { return }
+        guard n == 3 || n == 4, let raw else {
+            if recognizers.reset(device) { emit([.end]) }
             return
-        }
-        // A finger added or lifted mid-swipe is a different gesture: drop
-        // the partial track instead of attributing it to the new count.
-        if recognizers.fingerCount(device) != n {
-            recognizers.reset(device)
-            recognizers.setFingerCount(device, n)
         }
         let touches = raw.bindMemory(to: MTTouch.self, capacity: n)
         var cx: Float = 0
@@ -226,13 +237,17 @@ final class TrackpadGestures {
             cy += touches[i].normalized.pos.y
         }
         cx /= Float(n); cy /= Float(n)
-        guard
-            let dir = recognizers.feed(
-                device, centroidX: cx, centroidY: cy,
-                now: Date().timeIntervalSinceReferenceDate)
-        else { return }
+        let phases = recognizers.feed(
+            device, fingers: n, centroidX: cx, centroidY: cy,
+            now: Date().timeIntervalSinceReferenceDate)
+        if !phases.isEmpty { emit(phases) }
+    }
+
+    private nonisolated func emit(_ phases: [SwipePhase]) {
         DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated { self?.onSwipe?(dir, n, isMouse) }
+            MainActor.assumeIsolated {
+                for phase in phases { self?.onGesture?(phase) }
+            }
         }
     }
 }
@@ -258,33 +273,25 @@ private func mtCallback3(_ d: Int32, _ t: UnsafeRawPointer?, _ c: Int32, _ ts: D
 }
 private let mtCallbacks: [MTContactCallback] = [mtCallback0, mtCallback1, mtCallback2, mtCallback3]
 
-// One SwipeRecognizer per device id, behind the same lock discipline: the
-// table is read and written from the MultitouchSupport thread only.
+// One ContinuousTracker per device id, behind the same lock discipline:
+// the table is read and written from the MultitouchSupport thread only.
 private nonisolated final class RecognizerTable: @unchecked Sendable {
     private let lock = NSLock()
-    private var recognizers: [Int32: SwipeRecognizer] = [:]
-    private var fingerCounts: [Int32: Int] = [:]
+    private var recognizers: [Int32: ContinuousTracker] = [:]
 
-    private func recognizer(_ device: Int32) -> SwipeRecognizer {
+    private func recognizer(_ device: Int32) -> ContinuousTracker {
         if let existing = recognizers[device] { return existing }
-        let made = SwipeRecognizer()
+        let made = ContinuousTracker()
         recognizers[device] = made
         return made
     }
-    func reset(_ device: Int32) {
+    func reset(_ device: Int32) -> Bool {
         lock.lock(); let r = recognizer(device); lock.unlock()
-        r.reset()
+        return r.reset()
     }
-    func fingerCount(_ device: Int32) -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return fingerCounts[device] ?? 0
-    }
-    func setFingerCount(_ device: Int32, _ n: Int) {
-        lock.lock(); defer { lock.unlock() }
-        fingerCounts[device] = n
-    }
-    func feed(_ device: Int32, centroidX: Float, centroidY: Float, now: Double) -> SwipeDirection? {
+    func feed(_ device: Int32, fingers: Int, centroidX: Float, centroidY: Float, now: Double) -> [SwipePhase]
+    {
         lock.lock(); let r = recognizer(device); lock.unlock()
-        return r.feed(centroidX: centroidX, centroidY: centroidY, now: now)
+        return r.feed(fingers: fingers, centroidX: centroidX, centroidY: centroidY, now: now)
     }
 }

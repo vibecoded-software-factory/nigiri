@@ -34,16 +34,18 @@ extension TilingEngine {
     }
 
     // niri's environment {}: variables layered over the inherited ones for
-    // everything nigiri spawns. Empty value = unset, like niri.
+    // everything nigiri spawns. nil (config `K null`) UNSETS; an empty
+    // string genuinely sets an empty variable (misc.rs:158-164) - the old
+    // "empty value = unset" rule was invented.
     static func spawnEnvironment() -> [String: String]? {
         guard !spawnEnvironmentOverrides.isEmpty else { return nil }
         var env = ProcessInfo.processInfo.environment
         for (k, v) in spawnEnvironmentOverrides {
-            if v.isEmpty { env.removeValue(forKey: k) } else { env[k] = v }
+            if let v { env[k] = v } else { env.removeValue(forKey: k) }
         }
         return env
     }
-    nonisolated(unsafe) static var spawnEnvironmentOverrides: [String: String] = [:]
+    nonisolated(unsafe) static var spawnEnvironmentOverrides: [String: String?] = [:]
 
     func spawn(_ command: String) {
         spawn(argv: Self.spawnArgv(command))

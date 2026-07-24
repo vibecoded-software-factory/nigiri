@@ -108,8 +108,7 @@ final class TilingEngine {
             guard !hits(rule.excludes) else { continue }
             if merged == nil { merged = NigiriConfig.Rule() }
             if let v = rule.openFloating { merged?.openFloating = v }
-            if let v = rule.defaultWidthProportion { merged?.defaultWidthProportion = v }
-            if let v = rule.openOnWorkspace { merged?.openOnWorkspace = v }
+            if let v = rule.defaultWidth { merged?.defaultWidth = v }
             if let v = rule.openOnWorkspaceName { merged?.openOnWorkspaceName = v }
             // Last-set-wins Option<bool>, niri's merge (window/mod.rs):
             // sticky-true made a specific `open-maximized false` unable to
@@ -242,25 +241,26 @@ final class TilingEngine {
         let isFloating: Bool
         let startFrame: CGRect
         let startPoint: CGPoint
+        // niri's InteractiveMoveState::Starting -> ::Moving transition
+        // (layout/mod.rs:3917): a TILED drag only truly begins once the
+        // pointer has travelled 256px from the grab; until then the tile
+        // just leans toward the pointer through a rubber band. Floating
+        // windows start moving immediately (the !is_floating guard).
+        var started: Bool
     }
     var modDrag: ModDragState?
+    // The named-workspace list from the LAST applied config: applyConfig
+    // diffs against it to unname only what the user actually removed
+    // (niri.rs:1446-1452), leaving set-workspace-name names alone.
+    var configNamedWorkspaces: [String] = []
     let configWatcher = ConfigWatcher(path: NigiriConfig.path)
-    let commandPipe = CommandPipe()
-    var gestureSwipeLeft = "focus-column-right"
-    var gestureSwipeRight = "focus-column-left"
-    var gestureSwipeUp = "focus-workspace-up"
-    var gestureSwipeDown = "focus-workspace-down"
+    // Continuous 3-/4-finger gesture in flight (see TilingEngine+Gestures).
+    var swipeGesture: SwipeGestureState?
     // Mod+wheel bindings (key "mod[-ctrl][-shift]-<dir>" -> action line),
     // read by the mouse tap's scroll handler; updated on every reload.
     var wheelActions: [String: String] = [:]
     var mouseActions: [String: String] = [:]
-    var gestureFourLeft = ""
-    var gestureFourRight = ""
-    var gestureFourUp = ""
-    var gestureFourDown = ""
     // Magic Mouse swipes, by finger count.
-    var gestureMouseOne: [SwipeDirection: String] = [:]
-    var gestureMouseTwo: [SwipeDirection: String] = [:]
     // niri's hot corners (gestures { hot-corners {} }): 1x1 screen corners
     // that toggle the overview, edge-triggered. Copied from config on every
     // reload; checked by a light pointer poll (see checkHotCorner).
@@ -270,6 +270,9 @@ final class TilingEngine {
     var hotCornerBottomLeft = false
     var hotCornerBottomRight = false
     var pointerInsideHotCorner = false
+    // Whether layout { border } is enabled: only then does the FOCUSED
+    // window wear the active-color border under its ring, like niri's.
+    var borderActiveEnabled = false
     var hotCornerTimer: Timer?
     // The config's animations section (see animationCurve(named:)).
     var configuredAnimations: [String: AnimationCurve] = [:]
@@ -304,8 +307,11 @@ final class TilingEngine {
     // event reports, both on every reload and as the guaranteed first event
     // a new subscriber receives (niri-ipc/src/lib.rs).
     var configLoadFailed = false
+    // niri's config error notification (src/ui/config_error_notification.rs):
+    // shown on every failed reload, hidden by a successful one.
+    let configErrorNotification = ConfigErrorNotification()
     // screenshot-path, with strftime placeholders, for the screenshot actions.
-    var screenshotPath = "~/Desktop/Screenshot %Y-%m-%d %H.%M.%S.png"
+    var screenshotPath = "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
     let overviewChrome = OverviewChrome()
     let overviewPanel = OverviewPanel()
     let insertHint = InsertHintOverlay()
@@ -367,10 +373,7 @@ final class TilingEngine {
     // the monitor.
     var overviewKeyMonitor: Any?
     // The active workspace's fullscreen window (see Workspace).
-    var fullscreenWindowRef: ManagedWindow? {
-        get { workspace.fullscreenWindow }
-        set { workspace.fullscreenWindow = newValue }
-    }
+    var fullscreenWindowRef: ManagedWindow? { workspace.fullscreenWindow }
     // Its own listener (own Carbon signature) so unregistering the
     // overview's Escape/Enter never touches the config's binds.
     let overviewKeys = HotkeyListener()
@@ -384,6 +387,19 @@ final class TilingEngine {
     // frames, plus each entry's AX-space box for spatial neighbor search and
     // the index range of each workspace row for whole-row jumps.
     var overviewSelectedIndex = 0
+    // Accumulated continuous vertical scroll inside the overview - the
+    // workspace-stack travel (300px per workspace, monitor.rs:36), reset on
+    // every overview session.
+    var overviewScrollTravelY: CGFloat = 0
+    // The wheel's accumulated ticks and the 50ms rate limit niri puts on
+    // overview workspace switches (input/mod.rs:3204-3231).
+    var overviewWheelTicks: CGFloat = 0
+    var overviewWheelLastFire = Date.distantPast
+    // The last keyboard layout SET broadcast over IPC, so the input-source
+    // observer can tell a switch from a set change.
+    var lastKeyboardLayoutNames: [String] = []
+    // niri's input { workspace-auto-back-and-forth }.
+    var workspaceAutoBackAndForth = false
     var overviewBoxes: [CGRect] = []
     var overviewRowRanges: [Range<Int>] = []
     // Each row's workspace and its clip band, so a scroll can pan the
@@ -685,10 +701,16 @@ final class TilingEngine {
         let focused = focusedManagedWindow()
         let screenFrame = usableScreen().frame
         let stacking = WindowStacking.onScreen()
+        // niri: with border enabled the focused window wears the border in
+        // active-color too, under its ring (tile.rs draws both).
+        let activeFrame =
+            borderActiveEnabled
+            ? focused.flatMap { WindowMover.currentFrame($0.axElement) } : nil
         borders.update(
             frames: Self.decoratedFrames(
                 decorationCandidates(excluding: focused.map { [$0] } ?? [], stacking: stacking),
-                occluders: stacking, screen: screenFrame))
+                occluders: stacking, screen: screenFrame),
+            active: activeFrame)
     }
 
     // Tab indicators for every visible tabbed column, refreshed with the
@@ -704,7 +726,6 @@ final class TilingEngine {
         // how layout() and targetFrames drifted apart once already.
         let geometry = ColumnLayoutEngine.columnGeometry(
             columns: workspace.columns, in: screenFrame,
-            maximizedIndex: workspace.maximizedIndex,
             viewOffset: workspace.viewOffset)
         for geo in geometry where geo.column.isTabbed {
             // Same rule as the borders: a column scrolled out of view would
@@ -833,47 +854,7 @@ final class TilingEngine {
     // config owns that tradeoff.
     let listener = HotkeyListener()
 
-    var hotkeyOverlay = HotkeyOverlay(bindings: [])
-
-    // The full action vocabulary as ONE list: performAction's switch
-    // answers to exactly these names (plus niri's aliases, normalized in
-    // applyConfig), and the overlay derives its unbound rows from whatever
-    // the config leaves out - there is no second list to keep in sync.
-    let actionCatalog = [
-        "focus-column-left", "focus-column-right", "focus-window-up", "focus-window-down",
-        "focus-column-first", "focus-column-last", "focus-workspace", "focus-workspace-previous",
-        "focus-column-right-or-first", "focus-column-left-or-last", "focus-column",
-        "focus-window-top", "focus-window-bottom", "focus-window-down-or-top",
-        "focus-window-up-or-bottom", "focus-window-previous", "focus-floating", "focus-tiling",
-        "swap-window-left", "swap-window-right", "move-column-to-index", "move-workspace-to-index",
-        "move-window-to-workspace", "move-window-to-workspace-up", "move-window-to-workspace-down",
-        "move-window-to-floating", "move-window-to-tiling", "center-window", "set-column-display",
-        "set-workspace-name", "unset-workspace-name", "open-overview", "close-overview",
-        "switch-preset-window-height-back", "switch-preset-window-width-back",
-        "focus-workspace-up", "focus-workspace-down",
-        "move-column-left", "move-column-right", "move-window-up", "move-window-down",
-        "move-column-to-first", "move-column-to-last", "move-column-to-workspace",
-        "move-column-to-workspace-up", "move-column-to-workspace-down",
-        "move-workspace-up", "move-workspace-down",
-        "consume-or-expel-window-left", "consume-or-expel-window-right",
-        "consume-window-into-column", "expel-window-from-column",
-        "maximize-column", "maximize-window-to-edges", "fullscreen-window",
-        "toggle-windowed-fullscreen", "native-fullscreen", "close-window",
-        "switch-preset-column-width", "switch-preset-column-width-back", "switch-preset-window-height",
-        "switch-preset-window-width",
-        "set-column-width", "set-window-height", "reset-window-height",
-        "expand-column-to-available-width", "resize-edge",
-        "center-column", "center-visible-columns",
-        "toggle-window-floating", "switch-focus-between-floating-and-tiling",
-        "toggle-column-tabbed-display", "toggle-overview",
-        "screenshot", "screenshot-screen", "screenshot-window",
-        "show-hotkey-overlay", "spawn", "quit",
-    ]
-    let actionAliases = [
-        "consume-or-expel-left": "consume-or-expel-window-left",
-        "consume-or-expel-right": "consume-or-expel-window-right",
-        "spawn-sh": "spawn",
-    ]
+    var hotkeyOverlay = HotkeyOverlay(entries: [])
 
     init() {
         let rest = Array(cliArgs.dropFirst())
@@ -1017,7 +998,12 @@ final class TilingEngine {
             forName: NSNotification.Name("AppleSelectedInputSourcesChangedNotification"),
             object: nil, queue: .main
         ) { _ in
-            MainActor.assumeIsolated { reloadForLayout.run() }
+            MainActor.assumeIsolated {
+                reloadForLayout.run()
+                // niri broadcasts KeyboardLayoutSwitched / -Changed as the
+                // active source or the set changes (lib.rs:1690-1701).
+                self.emitKeyboardLayoutChange()
+            }
         }
 
         // AXObserver only watches PIDs we already know about (registered the
@@ -1088,6 +1074,10 @@ final class TilingEngine {
         // session companions, not supervised services).
         for argv in initialConfig.spawnAtStartup { spawn(argv: argv) }
         for command in initialConfig.spawnShAtStartup { spawnShell(command) }
+        // niri shows "Important Hotkeys" on every startup unless
+        // hotkey-overlay { skip-at-startup } (misc.rs:67-76); it never
+        // showed here at all.
+        if !initialConfig.hotkeyOverlaySkipAtStartup { hotkeyOverlay.toggle() }
 
         // Live reload (see ConfigWatcher: editors save atomically, which kills
         // the watched inode, so it re-arms itself).
@@ -1095,9 +1085,13 @@ final class TilingEngine {
             if let config = NigiriConfig.load() {
                 self.configLoadFailed = false
                 self.applyConfig(config, initial: false)
+                self.configErrorNotification.hide()
             } else {
                 self.configLoadFailed = true
                 print("[config] reload failed - keeping the previous configuration")
+                // niri shows a banner, from scratch even if already showing,
+                // to bring attention (config_error_notification.rs:77-90).
+                self.configErrorNotification.show(on: self.focusedOutput.screen)
             }
             // The include set can change with every edit: re-watch what the
             // load actually read.
@@ -1135,7 +1129,7 @@ final class TilingEngine {
             // continuous 1:1 scroll pans the row. The pan-on-wheel was
             // invented ("there is nothing else for it to do" - there was).
             if !continuous {
-                return self.overviewWheelWorkspaceSwitch(dy: dy)
+                return self.overviewWheelWorkspaceSwitch(dy: dy, at: point)
             }
             return self.overviewPan(dx: dx, dy: dy, at: point)
         }
@@ -1145,7 +1139,9 @@ final class TilingEngine {
                 let (w, floating) = self.managedWindowAt(point),
                 let frame = WindowMover.currentFrame(w.axElement)
             else { return false }
-            self.modDrag = ModDragState(window: w, isFloating: floating, startFrame: frame, startPoint: point)
+            self.modDrag = ModDragState(
+                window: w, isFloating: floating, startFrame: frame, startPoint: point,
+                started: floating)
             // Model focus follows the grab (niri does the same on drag start).
             if floating {
                 if let idx = self.workspace.floatingWindows.firstIndex(where: { $0 === w }) {
@@ -1170,11 +1166,33 @@ final class TilingEngine {
             let dx = point.x - drag.startPoint.x
             let dy = point.y - drag.startPoint.y
             if mouseDrag.phase == .move {
+                var offsetX = dx
+                var offsetY = dy
+                if !drag.started {
+                    // niri's start threshold (layout/mod.rs:97, 3888-3918):
+                    // below 256px of travel the tile does not detach - it
+                    // leans toward the pointer by band(sq_dist / 256^2)
+                    // with the {stiffness 1, limit 0.5} band, so the lean
+                    // never exceeds half the delta.
+                    let sqDist = dx * dx + dy * dy
+                    let threshold: CGFloat = 256 * 256
+                    if sqDist < threshold {
+                        let factor = RubberBand.interactiveMoveStart.band(sqDist / threshold)
+                        offsetX = dx * factor
+                        offsetY = dy * factor
+                    } else {
+                        self.modDrag?.started = true
+                    }
+                }
                 try? WindowMover.setPosition(
                     w.axElement,
-                    to: CGPoint(x: drag.startFrame.origin.x + dx, y: drag.startFrame.origin.y + dy))
-                // niri's insert hint: paint where this window would land.
-                if !drag.isFloating, let preview = self.insertPreview(at: point) {
+                    to: CGPoint(
+                        x: drag.startFrame.origin.x + offsetX, y: drag.startFrame.origin.y + offsetY))
+                // niri's insert hint: paint where this window would land -
+                // only once the move has actually started.
+                if !drag.isFloating, self.modDrag?.started == true,
+                    let preview = self.insertPreview(at: point)
+                {
                     self.pendingDrop = preview.position
                     self.insertHint.show(preview.hint)
                 }
@@ -1201,6 +1219,15 @@ final class TilingEngine {
                 return
             }
             if mouseDrag.phase == .move {
+                // Released below the start threshold: the move never began
+                // (upstream's Starting state just ends), so the tile snaps
+                // back to its slot - no drop.
+                if !drag.started {
+                    print("mod-drag: below the 256px start threshold, snapped back")
+                    self.reflow()
+                    self.focusCurrentColumn()
+                    return
+                }
                 // niri's interactive move: the WINDOW lands where the hint said -
                 // a new column between two, or a slot inside a column's stack.
                 // The settle reflow snaps the ghost into place.
@@ -1220,20 +1247,21 @@ final class TilingEngine {
                     })
                 {
                     let column = self.workspace.columns[columnIndex]
-                    let usableWidth = self.usableScreen().usableWidth
-                    if usableWidth > 0 {
-                        column.widthProportion = self.clampedProportion(
-                            ColumnLayoutEngine.proportion(forWidth: current.width, usableWidth: usableWidth),
-                            for: column)
-                        column.presetWidthIndex = nil
-                    }
+                    // niri's interactive resize goes through set_column_width
+                    // SetFixed (scrolling.rs:3589-3590), so a dragged width
+                    // is stored as FIXED pixels - it no longer drifts when
+                    // gaps or the monitor change.
+                    self.applyColumnWidth(.setFixed(current.width), to: column)
                     if column.windows.count > 1, !column.isTabbed {
-                        w.manualHeightPx = current.height
+                        // Same invariant as set-window-height: one non-Auto
+                        // height per column (scrolling.rs:244-247), so the
+                        // stack's shape is frozen into Auto weights before
+                        // this window pins its dragged height.
+                        if w.manualHeightPx == nil { self.convertHeightsToAuto(column) }
+                        w.setFixedHeight(current.height)
                         column.cachedHeights = nil
                     }
-                    print(
-                        "mod-drag: resized to \(Int(current.width))px (\(String(format: "%.0f%%", column.widthProportion * 100)))"
-                    )
+                    print("mod-drag: resized to \(Int(current.width))px")
                 }
                 self.reflow()
             }
@@ -1244,9 +1272,10 @@ final class TilingEngine {
                 // Logged like the button path: a wheel bind that never fires is
                 // otherwise indistinguishable from a wheel that reports nothing.
                 debugLog("[mouse] wheel \(key) has no bind")
-                return
+                return false
             }
             self.performAction(action)
+            return true
         }
         // Mouse buttons bound in the config (niri's Mod+MouseMiddle and
         // friends). Returns whether the press was claimed, so an unbound button
@@ -1267,26 +1296,11 @@ final class TilingEngine {
 
         // Three-finger swipes -> the config-mapped actions (read live, so a
         // reload re-maps them without restarting the recognizer).
-        trackpadGestures.onSwipe = { direction, fingers, isMouse in
-            // A Magic Mouse is a multitouch surface too, but with room for one
-            // or two fingers - its swipes are their own bindings, empty by
-            // default (one-finger vertical on that surface IS scrolling).
-            let table: [SwipeDirection: String]
-            if isMouse {
-                table = fingers == 1 ? self.gestureMouseOne : self.gestureMouseTwo
-            } else if fingers == 4 {
-                table = [
-                    .left: self.gestureFourLeft, .right: self.gestureFourRight,
-                    .up: self.gestureFourUp, .down: self.gestureFourDown,
-                ]
-            } else {
-                table = [
-                    .left: self.gestureSwipeLeft, .right: self.gestureSwipeRight,
-                    .up: self.gestureSwipeUp, .down: self.gestureSwipeDown,
-                ]
-            }
-            if let action = table[direction], !action.isEmpty { self.performAction(action) }
-        }
+        // niri's continuous gestures (input/mod.rs): 3-finger drives the
+        // view offset / workspace switch, 4-finger the overview - hardcoded
+        // upstream, never configurable; the per-direction action tables
+        // here were invented vocabulary (audit CFG-7/ANI-2).
+        trackpadGestures.onGesture = { phase in self.handleSwipe(phase) }
         trackpadGestures.start()
 
         if !listener.start() {
@@ -1297,20 +1311,6 @@ final class TilingEngine {
             print(
                 "hotkeys active: \(initialConfig.binds.count) binds from \(NigiriConfig.path) (Cmd+Opt+/ = overlay)"
             )
-        }
-
-        // niri-style control channel (niri's is `niri msg action ...` over its
-        // IPC socket): a FIFO other processes can write action lines into -
-        // `echo "focus-workspace 2" > /tmp/nigiri-cmd`. Every action goes
-        // through the exact same functions the hotkeys call, so anything
-        // driven from here exercises the real paths. Also the only way to
-        // drive nigiri programmatically (tests, scripts, a future `nigiri msg`
-        // subcommand) without simulating keyboard input, which this project
-        // never does.
-        commandPipe.start { line in
-            // Same router as the config binds: one vocabulary, two input
-            // surfaces.
-            self.performAction(line)
         }
 
         // DispatchSource, not signal(2) handlers: restoring windows needs AX

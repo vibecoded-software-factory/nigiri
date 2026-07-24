@@ -13,7 +13,10 @@ import Foundation
 // everything, and only supports modifier+key combos (Cmd+Option+H, not an
 // arbitrary held key acting as its own modifier).
 final class HotkeyListener {
-    struct Modifiers: OptionSet {
+    // nonisolated: pure value constants, read from the nonisolated config
+    // parser (modifierMask) - under the module's MainActor default they
+    // would otherwise be actor-bound for no reason.
+    nonisolated struct Modifiers: OptionSet {
         let rawValue: UInt32
         static let command = Modifiers(rawValue: UInt32(cmdKey))
         static let option = Modifiers(rawValue: UInt32(optionKey))

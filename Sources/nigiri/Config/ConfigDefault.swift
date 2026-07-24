@@ -15,9 +15,9 @@ extension NigiriConfig {
 
     static let defaultConfigText = """
         // nigiri config - niri's config.kdl, translated to macOS. Live-reloads on save.
-        // Mod = Cmd+Opt (macOS has no free Super). Also: Cmd/Opt/Ctrl/Shift, and
-        // Hyper = all four (Karabiner Caps Lock remap). Keys: arrows, Home/End,
-        // Page_Up/Page_Down, 0-9, a-z, F1-F20, Slash, Comma, Minus, ...
+        // Mod = Cmd+Opt (macOS has no free Super). Modifier words are niri's:
+        // Ctrl, Shift, Alt (Option), Super/Win (Command), Mod. Keys: arrows,
+        // Home/End, Page_Up/Page_Down, 0-9, a-z, F1-F20, Slash, Comma, Minus, ...
 
         layout {
             gaps 16
@@ -51,8 +51,10 @@ extension NigiriConfig {
             // }
 
             // Shadow: macOS draws every window's own and it can't be replaced,
-            // so these values govern the ring's glow instead.
+            // so these values govern the ring's glow instead. Off unless you
+            // add `on` - like niri, a bare shadow {} changes nothing.
             // shadow {
+            //     on
             //     softness 30
             //     offset x=0 y=5
             //     color "#00000070"
@@ -65,10 +67,13 @@ extension NigiriConfig {
                 active-color "#7fc8ff"
             }
 
-            // Border for the NON-focused windows (the focused one gets the ring):
+            // Border: a separate decoration from the focus ring, off by
+            // default. Uncommenting the block ENABLES it (niri's documented
+            // special case); add `off` inside to disable again.
             // border {
-            //     width 2
-            //     inactive-color "#585b70"
+            //     width 4
+            //     active-color "#ffc87f"
+            //     inactive-color "#505050"
             // }
         }
 
@@ -77,12 +82,13 @@ extension NigiriConfig {
         //     backdrop-color "#0d0d0d"
         // }
 
-        // Variables for everything nigiri spawns (empty value = unset it):
+        // Variables for everything nigiri spawns (`VAR null` unsets it):
         // environment {
         //     TERM "xterm-256color"
         // }
 
-        // screenshot-path "~/Desktop/Screenshot %Y-%m-%d %H.%M.%S.png"
+        // screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+        // screenshot-path null   // clipboard only, never saved
 
         // input {
         //     // What Mod+ means (Cmd+Opt by default; niri uses Super, which
@@ -92,31 +98,19 @@ extension NigiriConfig {
         //     warp-mouse-to-focus
         // }
 
-        // Three-finger trackpad swipes (needs macOS's 3-finger gestures OFF in
-        // System Settings > Trackpad, so they're free for us). Defaults below;
-        // any action from the binds vocabulary works, empty string disables.
+        // Touchpad gestures are niri's, hardcoded and continuous (needs
+        // macOS's 3-finger gestures OFF in System Settings > Trackpad, so
+        // they're free for us): 3-finger horizontal scrolls the column
+        // strip, 3-finger vertical switches workspaces, 4-finger vertical
+        // opens/closes the overview. The gestures {} section configures
+        // only what niri's does (hot-corners; dnd-edge-* has no macOS
+        // counterpart yet):
         // gestures {
-        //     three-finger-left focus-column-right
-        //     three-finger-right focus-column-left
-        //     three-finger-up focus-workspace-up
-        //     three-finger-down focus-workspace-down
-        //     four-finger-up open-overview
-        //     four-finger-down close-overview
-        //     // Magic Mouse (the mouse's touch surface). Empty by default:
-        //     // with ONE finger a vertical drag IS the scroll, so binding it
-        //     // would fire on every scroll. With two fingers it's free.
-        //     mouse-two-finger-left focus-column-right
-        //     mouse-two-finger-right focus-column-left
+        //     hot-corners { off }
         // }
 
-        // Mod+wheel (MOUSE wheel only - trackpad scroll is consumed by macOS).
-        // Hold Cmd+Opt and scroll; keys are mod[-ctrl][-shift]-<up|down|left|right>.
-        // wheel {
-        //     mod-down focus-workspace-down
-        //     mod-up focus-workspace-up
-        //     mod-ctrl-down move-column-to-workspace-down
-        //     mod-ctrl-up move-column-to-workspace-up
-        // }
+        // Wheel binds are ordinary binds, exactly like in niri:
+        // Mod+WheelScrollDown, Mod+Ctrl+WheelScrollUp, ... (see binds below).
 
         // Mouse buttons: written like any other bind, inside binds{}.
         //     Mod+MouseMiddle { close-window; }
@@ -139,18 +133,92 @@ extension NigiriConfig {
         //     // open-maximized true
         // }
 
+        // niri's own default keymap (resources/default-config.kdl:349-633),
+        // key for key, with Mod = Cmd+Opt. Omissions are macOS-forced and
+        // say so; the previous keymap here was reinvented from scratch.
         binds {
-            Mod+Left  { focus-column-left; }
-            Mod+Right { focus-column-right; }
-            Mod+Up    { focus-window-up; }
-            Mod+Down  { focus-window-down; }
-            Mod+Home  { focus-column-first; }
-            Mod+End   { focus-column-last; }
+            Mod+Shift+Slash { show-hotkey-overlay; }
 
-            Mod+Ctrl+Left        { focus-monitor-left; }
-            Mod+Ctrl+Right       { focus-monitor-right; }
+            // Suggested binds for running programs (niri suggests alacritty/
+            // fuzzel/swaylock; these are their macOS counterparts).
+            Mod+T hotkey-overlay-title="Open a Terminal" { spawn "open" "-a" "Terminal"; }
+            // Mod+D hotkey-overlay-title="Run an Application" { spawn-sh "open -a 'Launchpad'"; }
+            // XF86Audio*/XF86MonBrightness* volume and brightness keys do
+            // not exist on macOS keyboards; the system owns those keys.
+
+            Mod+O repeat=false { toggle-overview; }
+
+            Mod+Q repeat=false { close-window; }
+
+            Mod+Left  { focus-column-left; }
+            Mod+Down  { focus-window-down; }
+            Mod+Up    { focus-window-up; }
+            Mod+Right { focus-column-right; }
+            Mod+H     { focus-column-left; }
+            Mod+J     { focus-window-down; }
+            Mod+K     { focus-window-up; }
+            Mod+L     { focus-column-right; }
+
+            Mod+Ctrl+Left  { move-column-left; }
+            Mod+Ctrl+Down  { move-window-down; }
+            Mod+Ctrl+Up    { move-window-up; }
+            Mod+Ctrl+Right { move-column-right; }
+            Mod+Ctrl+H     { move-column-left; }
+            Mod+Ctrl+J     { move-window-down; }
+            Mod+Ctrl+K     { move-window-up; }
+            Mod+Ctrl+L     { move-column-right; }
+
+            Mod+Home { focus-column-first; }
+            Mod+End  { focus-column-last; }
+            Mod+Ctrl+Home { move-column-to-first; }
+            Mod+Ctrl+End  { move-column-to-last; }
+
+            Mod+Shift+Left  { focus-monitor-left; }
+            Mod+Shift+Down  { focus-monitor-down; }
+            Mod+Shift+Up    { focus-monitor-up; }
+            Mod+Shift+Right { focus-monitor-right; }
+            Mod+Shift+H     { focus-monitor-left; }
+            Mod+Shift+J     { focus-monitor-down; }
+            Mod+Shift+K     { focus-monitor-up; }
+            Mod+Shift+L     { focus-monitor-right; }
+
             Mod+Shift+Ctrl+Left  { move-column-to-monitor-left; }
+            Mod+Shift+Ctrl+Down  { move-column-to-monitor-down; }
+            Mod+Shift+Ctrl+Up    { move-column-to-monitor-up; }
             Mod+Shift+Ctrl+Right { move-column-to-monitor-right; }
+            Mod+Shift+Ctrl+H     { move-column-to-monitor-left; }
+            Mod+Shift+Ctrl+J     { move-column-to-monitor-down; }
+            Mod+Shift+Ctrl+K     { move-column-to-monitor-up; }
+            Mod+Shift+Ctrl+L     { move-column-to-monitor-right; }
+
+            Mod+Page_Down      { focus-workspace-down; }
+            Mod+Page_Up        { focus-workspace-up; }
+            Mod+U              { focus-workspace-down; }
+            Mod+I              { focus-workspace-up; }
+            Mod+Ctrl+Page_Down { move-column-to-workspace-down; }
+            Mod+Ctrl+Page_Up   { move-column-to-workspace-up; }
+            Mod+Ctrl+U         { move-column-to-workspace-down; }
+            Mod+Ctrl+I         { move-column-to-workspace-up; }
+
+            Mod+Shift+Page_Down { move-workspace-down; }
+            Mod+Shift+Page_Up   { move-workspace-up; }
+            Mod+Shift+U         { move-workspace-down; }
+            Mod+Shift+I         { move-workspace-up; }
+
+            Mod+WheelScrollDown      cooldown-ms=150 { focus-workspace-down; }
+            Mod+WheelScrollUp        cooldown-ms=150 { focus-workspace-up; }
+            Mod+Ctrl+WheelScrollDown cooldown-ms=150 { move-column-to-workspace-down; }
+            Mod+Ctrl+WheelScrollUp   cooldown-ms=150 { move-column-to-workspace-up; }
+
+            Mod+WheelScrollRight      { focus-column-right; }
+            Mod+WheelScrollLeft       { focus-column-left; }
+            Mod+Ctrl+WheelScrollRight { move-column-right; }
+            Mod+Ctrl+WheelScrollLeft  { move-column-left; }
+
+            Mod+Shift+WheelScrollDown      { focus-column-right; }
+            Mod+Shift+WheelScrollUp        { focus-column-left; }
+            Mod+Ctrl+Shift+WheelScrollDown { move-column-right; }
+            Mod+Ctrl+Shift+WheelScrollUp   { move-column-left; }
 
             Mod+1 { focus-workspace 1; }
             Mod+2 { focus-workspace 2; }
@@ -161,68 +229,52 @@ extension NigiriConfig {
             Mod+7 { focus-workspace 7; }
             Mod+8 { focus-workspace 8; }
             Mod+9 { focus-workspace 9; }
-            Mod+0 { focus-workspace-previous; }
-            Mod+Page_Up   { focus-workspace-up; }
-            Mod+Page_Down { focus-workspace-down; }
-            Mod+Slash { show-hotkey-overlay; }
-            Mod+Tab { toggle-overview; }
+            Mod+Ctrl+1 { move-column-to-workspace 1; }
+            Mod+Ctrl+2 { move-column-to-workspace 2; }
+            Mod+Ctrl+3 { move-column-to-workspace 3; }
+            Mod+Ctrl+4 { move-column-to-workspace 4; }
+            Mod+Ctrl+5 { move-column-to-workspace 5; }
+            Mod+Ctrl+6 { move-column-to-workspace 6; }
+            Mod+Ctrl+7 { move-column-to-workspace 7; }
+            Mod+Ctrl+8 { move-column-to-workspace 8; }
+            Mod+Ctrl+9 { move-column-to-workspace 9; }
 
-            Cmd+Ctrl+Shift+Left  { move-column-left; }
-            Cmd+Ctrl+Shift+Right { move-column-right; }
-            Cmd+Ctrl+Shift+Up    { move-window-up; }
-            Cmd+Ctrl+Shift+Down  { move-window-down; }
-            Cmd+Ctrl+Shift+Home  { move-column-to-first; }
-            Cmd+Ctrl+Shift+End   { move-column-to-last; }
-            Cmd+Ctrl+Shift+1 { move-column-to-workspace 1; }
-            Cmd+Ctrl+Shift+2 { move-column-to-workspace 2; }
-            Cmd+Ctrl+Shift+3 { move-column-to-workspace 3; }
-            Cmd+Ctrl+Shift+4 { move-column-to-workspace 4; }
-            Cmd+Ctrl+Shift+5 { move-column-to-workspace 5; }
-            Cmd+Ctrl+Shift+6 { move-column-to-workspace 6; }
-            Cmd+Ctrl+Shift+7 { move-column-to-workspace 7; }
-            Cmd+Ctrl+Shift+8 { move-column-to-workspace 8; }
-            Cmd+Ctrl+Shift+9 { move-column-to-workspace 9; }
+            Mod+BracketLeft  { consume-or-expel-window-left; }
+            Mod+BracketRight { consume-or-expel-window-right; }
+            Mod+Comma  { consume-window-into-column; }
+            Mod+Period { expel-window-from-column; }
 
-            Cmd+Opt+Ctrl+Left  { consume-or-expel-window-left; }
-            Cmd+Opt+Ctrl+Right { consume-or-expel-window-right; }
-            Cmd+Opt+Ctrl+Up    { expel-window-from-column; }
-            Cmd+Opt+Ctrl+Down  { maximize-column; }
-            Cmd+Opt+Ctrl+Home  { switch-preset-column-width; }
-            Cmd+Opt+Ctrl+End   { switch-preset-window-height; }
-            Cmd+Opt+Ctrl+Page_Up   { move-column-to-workspace-up; }
-            Cmd+Opt+Ctrl+Page_Down { move-column-to-workspace-down; }
+            Mod+R { switch-preset-column-width; }
+            Mod+Shift+R { switch-preset-column-width-back; }
+            Mod+Ctrl+Shift+R { switch-preset-window-height; }
+            Mod+Ctrl+R { reset-window-height; }
+            Mod+F { maximize-column; }
+            Mod+Shift+F { fullscreen-window; }
+            Mod+M { maximize-window-to-edges; }
+            Mod+Ctrl+F { expand-column-to-available-width; }
+            Mod+C { center-column; }
+            Mod+Ctrl+C { center-visible-columns; }
 
-            Cmd+Ctrl+Left  { set-column-width "-10%"; }
-            Cmd+Ctrl+Right { set-column-width "+10%"; }
-            Cmd+Ctrl+Up    { set-window-height "+10%"; }
-            Cmd+Ctrl+Down  { set-window-height "-10%"; }
-            Cmd+Ctrl+Home  { reset-window-height; }
-            Cmd+Ctrl+End   { expand-column-to-available-width; }
+            Mod+Minus { set-column-width "-10%"; }
+            Mod+Equal { set-column-width "+10%"; }
+            Mod+Shift+Minus { set-window-height "-10%"; }
+            Mod+Shift+Equal { set-window-height "+10%"; }
 
-            Cmd+Opt+Shift+Left  { resize-edge left "-10%"; }
-            Cmd+Opt+Shift+Right { resize-edge right "-10%"; }
-            Cmd+Opt+Shift+Up    { resize-edge top "-10%"; }
-            Cmd+Opt+Shift+Down  { resize-edge bottom "-10%"; }
-            Cmd+Opt+Shift+Home      { resize-edge left "+10%"; }
-            Cmd+Opt+Shift+End       { resize-edge right "+10%"; }
-            Cmd+Opt+Shift+Page_Up   { resize-edge top "+10%"; }
-            Cmd+Opt+Shift+Page_Down { resize-edge bottom "+10%"; }
+            Mod+V       { toggle-window-floating; }
+            Mod+Shift+V { switch-focus-between-floating-and-tiling; }
 
-            Cmd+Shift+Home { center-column; }
-            Cmd+Shift+End  { center-visible-columns; }
-            Cmd+Shift+Up   { toggle-window-floating; }
-            Cmd+Shift+Down { switch-focus-between-floating-and-tiling; }
-            Cmd+Shift+Page_Up   { maximize-window-to-edges; }
-            Cmd+Shift+Page_Down { fullscreen-window; }
+            Mod+W { toggle-column-tabbed-display; }
 
-            Mod+Comma { consume-window-into-column; }
-            Mod+Period { toggle-column-tabbed-display; }
-            Mod+Backslash { close-window; }
-            Mod+Grave { switch-preset-column-width-back; }
-            Cmd+Ctrl+Shift+Page_Up   { move-workspace-up; }
-            Cmd+Ctrl+Shift+Page_Down { move-workspace-down; }
-            // Hyper = Cmd+Opt+Ctrl+Shift (doesn't clash with Force Quit's Cmd+Opt+Esc)
-            Hyper+Escape { quit; }
+            // niri binds Print/Ctrl+Print/Alt+Print; macOS keyboards have
+            // no Print key, so pick keys of your own:
+            // F13      { screenshot; }
+            // Ctrl+F13 { screenshot-screen; }
+            // Alt+F13  { screenshot-window; }
+
+            // Mod+Escape toggle-keyboard-shortcuts-inhibit and Mod+Shift+P
+            // power-off-monitors have no macOS counterpart.
+
+            Mod+Shift+E { quit; }
         }
 
         """

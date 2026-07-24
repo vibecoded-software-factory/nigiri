@@ -101,7 +101,7 @@ swift build -c release
 .build/debug/nigiri selftest      # 325 pure-logic checks, no XCTest
 .build/debug/nigiri check-config [path]   # parse a config, report what was understood
 .build/debug/nigiri msg windows   # talk to the running instance
-echo "focus-column-right" > /tmp/nigiri-cmd   # drive an action without a keypress
+echo '"Version"' | nc -U /tmp/nigiri-msg.sock   # talk to the IPC socket directly
 ```
 
 The shipped binary runs as a **launchd agent** (`dev.nigiri`), logging to
@@ -144,8 +144,11 @@ main.swift ──► TilingEngine (@MainActor) ──► Layout/  (pure geometry
 - `Config/` — `ConfigParser` (the KDL subset niri's configs actually use),
   `Config` (`NigiriConfig` + the binding-key canonicalizer), `ConfigWatcher`,
   `ConfigDefault`, `Regex`.
-- `IPC/` — `MsgServer` (niri's protocol shape), `CommandPipe` (the FIFO),
-  `NiriProtocol`.
+- `IPC/` — `MsgServer` (niri's protocol shape) and `NiriProtocol`. The
+  legacy bare-word requests (`event-stream`, `action <line>`) are a
+  DOCUMENTED nigiri extension kept because the shell runtime (bento)
+  speaks them; the FIFO (`/tmp/nigiri-cmd`) was removed - `nigiri msg
+  action` covers it.
 
 A new action = a case in `+Dispatch`'s table + its implementation in the
 extension that owns that responsibility + the default config + the README.

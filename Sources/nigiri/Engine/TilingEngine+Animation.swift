@@ -64,21 +64,19 @@ extension TilingEngine {
         return location
     }
 
-    // niri's animation names, resolved against the config. Defaults match
-    // what nigiri shipped before the section existed: a critically damped
-    // spring at 2x niri's 1100 (cross-app render lag shows in proportion to
-    // how long windows spend in the air, so the transitions run stiffer
-    // here than on a compositor).
+    // niri's animation names, resolved against the config, then against
+    // the per-name defaults (AnimationCurve.defaults, verbatim from
+    // animations.rs - there used to be ONE spring(800) for every name, and
+    // an invented workspace-switch->window-movement inheritance). slowdown
+    // applies to both, like niri's clock-rate slowdown (it scales the
+    // clock, not just configured values).
     func animationCurve(named name: String) -> AnimationCurve {
         if animationsOff { return .off }
+        // slowdown 0 is instant, like a clock running at infinite rate
+        // (niri: rate = 1/slowdown); the spring math would NaN on it.
+        if animationSlowdown <= 0 { return .off }
         if let configured = configuredAnimations[name] { return scaled(configured) }
-        if name == "workspace-switch", let group = configuredAnimations["window-movement"] {
-            return scaled(group)
-        }
-        // niri's default spring: damping-ratio 1, stiffness 800 for
-        // window-movement/resize/overview (animations.rs:145). 2200 was
-        // "2x the user's 1100" - personal config baked in as the default.
-        return .spring(Spring(stiffness: 800))
+        return scaled(AnimationCurve.defaults[name] ?? .spring(Spring(stiffness: 800)))
     }
 
     // niri's animations { slowdown }: stretches every duration.
@@ -146,7 +144,7 @@ extension TilingEngine {
         // Escaped inline: a title with quotes must not break the stream.
         let title = w.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(
             of: "\"", with: "\\\"")
-        msgServer.broadcast("{\"event\":\"focus\",\"title\":\"\(title)\",\"pid\":\(w.pid)}")
+        msgServer.broadcastLegacy("{\"event\":\"focus\",\"title\":\"\(title)\",\"pid\":\(w.pid)}")
         emitWindowFocusChanged(w)
     }
 
@@ -231,8 +229,14 @@ extension TilingEngine {
         struct Anim {
             let window: ManagedWindow; let start: CGRect; let target: CGRect; var done: Bool;
             var lastWritten: CGRect; var translationOnly: Bool = false
+            // niri keeps window-movement, window-resize and window-open as
+            // SEPARATE animation channels (animations.rs); one batch curve
+            // ran everything as window-movement, leaving the other two
+            // parsed but dead. Explicit batches (workspace-switch) still
+            // override per-anim selection.
+            var curve: AnimationCurve = .off
         }
-        var anims: [Anim] = targets.compactMap { entry in
+        var anims: [Anim] = targets.compactMap { entry -> Anim? in
             guard let start = WindowMover.currentFrame(entry.window.axElement) else { return nil }
             // A size the app has already answered differently is aimed at
             // the ANSWER, not the request (see reachableTarget): the ring
@@ -262,9 +266,23 @@ extension TilingEngine {
             // construction: the reachable size IS the window's current one.
             let translationOnly =
                 abs(start.width - frame.width) <= 0.5 && abs(start.height - frame.height) <= 0.5
+            // Channel per anim: a fresh window's first flight is window-open,
+            // a size change is window-resize, a pure translation stays
+            // window-movement. Named batches (workspace-switch) keep theirs.
+            let channel: String
+            if animation != "window-movement" {
+                channel = animation
+            } else if entry.window.openAnimationPending {
+                entry.window.openAnimationPending = false
+                channel = "window-open"
+            } else if translationOnly {
+                channel = "window-movement"
+            } else {
+                channel = "window-resize"
+            }
             return Anim(
                 window: entry.window, start: start, target: frame, done: done, lastWritten: start,
-                translationOnly: translationOnly)
+                translationOnly: translationOnly, curve: animationCurve(named: channel))
         }
         guard anims.contains(where: { !$0.done }) else {
             updateRingImmediate()
@@ -279,10 +297,10 @@ extension TilingEngine {
         // between heavy and light windows moving together.
         anims.sort { $0.window.axWriteLatencyEMA > $1.window.axWriteLatencyEMA }
 
-        let curve = animationCurve(named: animation)
-        // `off` lands everything on its target on the first tick.
-        if case .off = curve {
-            for i in anims.indices where !anims[i].done {
+        // `off` (global or per-channel) lands those on their target on the
+        // first tick.
+        for i in anims.indices where !anims[i].done {
+            if case .off = anims[i].curve {
                 anims[i].done = true
                 anims[i].lastWritten = anims[i].target
                 _ = ColumnLayoutEngine.applyFrame(anims[i].window, target: anims[i].target)
@@ -364,7 +382,7 @@ extension TilingEngine {
                     // that were already stale by the time they landed - windows
                     // visibly out of phase with each other mid-flight.
                     let elapsed = CACurrentMediaTime() - startTime
-                    let decay = curve.remainingFraction(at: elapsed)
+                    let decay = a.curve.remainingFraction(at: elapsed)
                     let dx = Double(a.start.origin.x - a.target.origin.x) * decay
                     let dy = Double(a.start.origin.y - a.target.origin.y) * decay
                     let dw = Double(a.start.width - a.target.width) * decay
@@ -466,9 +484,13 @@ extension TilingEngine {
                     // Same rule as the settle pass, and literally the same
                     // function: minimized windows excluded, and a window whose
                     // border is hidden behind something in front of it drops it.
+                    let activeFrame =
+                        self.borderActiveEnabled
+                        ? anims.first(where: { $0.window === focusedWindow })?.lastWritten : nil
                     self.borders.update(
                         frames: TilingEngine.decoratedFrames(
-                            candidates, occluders: stacking, screen: screen))
+                            candidates, occluders: stacking, screen: screen),
+                        active: activeFrame)
                 }
                 if !stillMoving {
                     timer.cancel()
@@ -539,6 +561,16 @@ extension TilingEngine {
                         // e.g. reflow's completion doesn't write a stale layout
                         // against the newer animation's motion.
                         for c in settled { c(superseded) }
+                        // AFTER the completions: reflow's settle runs
+                        // applyLayout there - the authoritative write+memoize
+                        // pass - and only then do the frames reach
+                        // lastActualFrame. This is the moment a geometry-only
+                        // change becomes visible to the IPC diff
+                        // (WindowLayoutsChanged); the action-tail diff runs
+                        // BEFORE the animation moves anything, so without
+                        // this a pure resize reached clients one unrelated
+                        // action later.
+                        if !superseded { self.broadcastWindowDiff() }
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
                         MainActor.assumeIsolated { finishVerification.run() }

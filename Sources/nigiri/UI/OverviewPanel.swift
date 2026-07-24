@@ -184,20 +184,29 @@ final class OverviewPanel {
     // Config-driven style. The backdrop is the panel's own background; the
     // zoom is static because computeRows is pure.
     //
-    // `useWallpaper` is the default, and it is what niri looks like: its
-    // overview shows the DESKTOP behind the zoomed-out workspaces (the
-    // wallpaper is a background layer surface that stays visible), not a
-    // black curtain. This panel is opaque by construction - the real windows
-    // are still sitting behind it - so the desktop has to be drawn INTO it.
-    // An explicit `backdrop-color` in the config wins, like in niri.
-    func applyStyle(zoom: CGFloat, backdrop: NSColor, useWallpaper: Bool) {
+    // niri's overview backdrop is the plain backdrop-color - gray 0.15 by
+    // default (appearance.rs:12). The wallpaper appears behind it ONLY when
+    // a layer-rule says place-within-backdrop (that is how the Linux DMS
+    // setup gets its blurred wallpaper there); defaulting to a captured
+    // desktop was invented. The panel is opaque by construction - the real
+    // windows still sit behind it - so when that rule is present the
+    // desktop is drawn INTO it. The selection ring wears the focus-ring's
+    // own colors (the overview shows the real ring scaled, not a glow of
+    // its own), and the drop indicator the insert-hint's.
+    func applyStyle(
+        zoom: CGFloat, backdrop: NSColor, useWallpaper: Bool,
+        ringColor: NSColor, ringWidth: CGFloat, insertHintColor: NSColor
+    ) {
         Self.zoom = zoom
         backdropColor = backdrop
         self.useWallpaper = useWallpaper
         window.contentView?.layer?.backgroundColor = backdrop.cgColor
+        selectionView.layer?.borderColor = ringColor.cgColor
+        selectionView.layer?.borderWidth = max(1, ringWidth * min(0.75, max(0.0001, zoom)) * 2)
+        dropIndicator.layer?.backgroundColor = insertHintColor.cgColor
     }
     private var backdropColor = NSColor(calibratedWhite: 0.15, alpha: 1)
-    private var useWallpaper = true
+    private var useWallpaper = false
     private var backdropImage: CGImage?
     private let backdropView = NSView()
     private let backdropTint = NSView()
@@ -235,29 +244,26 @@ final class OverviewPanel {
         view.layer?.backgroundColor = backdropColor.cgColor
         window.contentView = view
 
+        // The selection ring is the focus ring at overview scale, nothing
+        // more: niri has no overview-specific ring, the real focus ring
+        // just scales with the window. The glow it used to wear was
+        // invented (audit ACT-15); colors/width come from the config via
+        // applyStyle.
         selectionView.wantsLayer = true
-        selectionView.layer?.borderWidth = 3
+        selectionView.layer?.borderWidth = 2
         selectionView.layer?.borderColor =
             NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor
         selectionView.layer?.cornerRadius = 10
         selectionView.layer?.backgroundColor = NSColor.clear.cgColor
-        // A soft glow so the ring reads over busy thumbnails, mirroring the
-        // real focus ring's shadow.
-        selectionView.layer?.shadowColor =
-            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor
-        selectionView.layer?.shadowOpacity = 0.9
-        selectionView.layer?.shadowRadius = 10
-        selectionView.layer?.shadowOffset = .zero
         selectionView.isHidden = true
 
+        // The drop indicator is the insert hint at overview scale: niri's
+        // flat rgba(127,200,255,128) (appearance.rs:586-594), no glow.
         dropIndicator.wantsLayer = true
         dropIndicator.layer?.backgroundColor =
-            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 0.85).cgColor
+            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 128 / 255.0)
+            .cgColor
         dropIndicator.layer?.cornerRadius = 7
-        dropIndicator.layer?.shadowColor =
-            NSColor(calibratedRed: 127 / 255.0, green: 200 / 255.0, blue: 255 / 255.0, alpha: 1).cgColor
-        dropIndicator.layer?.shadowOpacity = 1
-        dropIndicator.layer?.shadowRadius = 6
         dropIndicator.layer?.shadowOffset = .zero
         dropIndicator.isHidden = true
     }

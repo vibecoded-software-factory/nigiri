@@ -34,9 +34,6 @@ final class ManagedWindow {
     // 720x892 for a window that is forever 440x388, and every decoration
     // animated toward frames that never matched reality.
     var fixedSize: CGSize? = nil
-    // niri scrolling.rs: an exact height constraint overrides the stored
-    // height, manual or not.
-    var effectiveFixedHeightPx: CGFloat? { fixedSize?.height ?? manualHeightPx }
     // When collectCurrentAXWindows last probed this window's shape (subrole,
     // close button, settable-ness) rather than taking the cached answer.
     var lastFullProbe = Date.distantPast
@@ -121,17 +118,37 @@ final class ManagedWindow {
     // tile it back. This flag marks the ones a later, calmer probe is allowed
     // to reclassify; a window the USER floated must never be yanked back.
     var autoFloatedAsDialog: Bool = false
+    // Where this window last sat as a FLOATING window - niri's
+    // stored_or_default_tile_pos (floating.rs): toggling a window back to
+    // floating returns it where it floated before, not to a fresh +50,+50.
+    var lastFloatingFrame: CGRect? = nil
     // Where this window sat before being stashed to the screen corner by a
     // workspace switch - tiled windows get their position recomputed on
     // restore anyway, but floating windows have no other record of where
     // they belong.
     var stashedFrame: CGRect? = nil
+    // Set at adoption, consumed by the first frame animation: that first
+    // flight plays niri's window-open channel instead of window-movement.
+    var openAnimationPending = false
     // Which preset this FLOATING window is currently sitting on, so
     // switch-preset-window-width cycles the list in order (niri's
     // preset_width_idx). Tiled windows use Column.presetWidthIndex.
     var presetWidthIndex: Int? = nil
-    // Same idea for switch-preset-window-height (niri's preset_height_idx).
+    // niri's WindowHeight::Preset(idx) for a TILED window: when set (and
+    // manualHeightPx is nil), the height is re-resolved from
+    // preset-window-heights[idx] on every layout pass, so a monitor or gap
+    // change re-applies the proportion (scrolling.rs:4533-4547) - it used
+    // to be materialized to pixels once and frozen. For a FLOATING window
+    // it is only the cycle position (heights there are frame-based).
+    // Mutually exclusive with manualHeightPx: setFixedHeight enforces it.
     var presetHeightIndex: Int? = nil
+
+    // niri's WindowHeight::Fixed(px): an explicit resize replaces a preset
+    // (set_window_height stores Fixed and the preset idx is gone).
+    func setFixedHeight(_ px: CGFloat) {
+        manualHeightPx = px
+        presetHeightIndex = nil
+    }
     // Consecutive relayouts in which this window was missing from its own
     // app's AX window list. A LIVE window can vanish from that list for a
     // scan - verified live: opening a second Alacritty window made the app

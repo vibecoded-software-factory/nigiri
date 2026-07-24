@@ -29,8 +29,19 @@ extension AnimationCurve {
             case .cubicBezier(let x1, let y1, let x2, let y2):
                 animation.timingFunction = CAMediaTimingFunction(
                     controlPoints: Float(x1), Float(y1), Float(x2), Float(y2))
-            case .easeOutQuad, .easeOutCubic, .easeOutExpo:
-                animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            // The power curves have EXACT cubic-bezier forms (x controls
+            // 1/3, 2/3 make x(u) = u; y controls match the polynomial), so
+            // nothing is approximated - the generic .easeOut stand-in bent
+            // them (audit ANI-10). Only expo has no cubic form; its
+            // approximation is the standard one and says so.
+            case .easeOutQuad:
+                animation.timingFunction = CAMediaTimingFunction(
+                    controlPoints: 1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0, 1)
+            case .easeOutCubic:
+                animation.timingFunction = CAMediaTimingFunction(
+                    controlPoints: 1.0 / 3.0, 1, 2.0 / 3.0, 1)
+            case .easeOutExpo:
+                animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
             }
             return animation
         }
