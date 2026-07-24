@@ -40,6 +40,13 @@ extension TilingEngine {
                 String($0.dropFirst(prefix.count))
             }
         }
+        // Everything after the action verb, verbatim - for a trailing string
+        // arg that the Action decoder flattens positionally and that may
+        // contain spaces (a macOS display name), which the space-split parts
+        // would truncate.
+        func restOfLine() -> String {
+            String(line.dropFirst(name.count)).trimmingCharacters(in: .whitespaces)
+        }
         // A WorkspaceReferenceArg ({Id|Index|Name}, flattened by the decoder
         // to id=/index=/name=) resolved to a 1-based workspace number, with
         // the positional spellings as fallback. move-*-to-workspace only read
@@ -217,6 +224,25 @@ extension TilingEngine {
         case "focus-monitor-right": focusMonitor(.right)
         case "focus-monitor-up": focusMonitor(.up)
         case "focus-monitor-down": focusMonitor(.down)
+        case "focus-monitor":
+            // niri Action::FocusMonitor{output}: focus a specific NAMED output
+            // (DMS's NiriService.focusMonitor sends this on multi-monitor
+            // moves). Distinct from the directional focus-monitor-<dir> above.
+            // The decoder flattens the string arg positionally, so the name is
+            // the rest of the line (macOS display names carry spaces).
+            var target = restOfLine()
+            if target.hasPrefix("output=") { target = String(target.dropFirst("output=".count)) }
+            guard !target.isEmpty, let index = outputs.firstIndex(where: { $0.name == target })
+            else { return false }
+            focusOutput(index)
+        case "do-screen-transition":
+            // niri Action::DoScreenTransition freezes the framebuffer and
+            // crossfades to hide the surface flash of a Wayland theme reload
+            // (DMS Theme.qml:1265 fires it on every theme switch). bento
+            // re-renders its QML in place with no such flash on macOS, so
+            // there is nothing to mask - accept the action (Handled) instead
+            // of erroring quietly on each theme switch.
+            return true
         case "move-column-to-monitor-left", "move-window-to-monitor-left": moveColumnToMonitor(.left)
         case "move-column-to-monitor-right", "move-window-to-monitor-right": moveColumnToMonitor(.right)
         case "move-column-to-monitor-up", "move-window-to-monitor-up": moveColumnToMonitor(.up)
